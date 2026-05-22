@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EV Charging Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css?v=38">
+    <style>
+        .station-workspace .booking-panel-compact { padding: 12px; }
+        .station-workspace .booking-panel-compact input,
+        .station-workspace .booking-panel-compact select { min-height: 34px; margin-top: 4px; padding: 6px 8px; font-size: 13px; }
+        .station-workspace .booking-panel-compact label { margin: 8px 0 2px; font-size: 12px; }
+        .station-workspace .booking-panel-compact button { min-height: 36px; margin-top: 10px; font-size: 13px; }
+    </style>
+</head>
+<body class="app-body">
+<main class="dashboard-shell">
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <div class="brand-mark compact">EV</div>
+            <div>
+                <strong>EV Charge</strong>
+                <span data-i18n="portal">Operations portal</span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav" aria-label="Dashboard navigation">
+            <button class="nav-link active" data-view="stations">
+                <span class="nav-icon" data-icon="station"></span>
+                <span data-i18n="navStations">EV Charging Stations</span>
+            </button>
+            <button class="nav-link" data-view="bookings">
+                <span class="nav-icon" data-icon="bookings"></span>
+                <span data-i18n="navBookings">Bookings</span>
+            </button>
+            <button class="nav-link" data-view="payments">
+                <span class="nav-icon" data-icon="payments"></span>
+                <span data-i18n="navPayments">Payments</span>
+            </button>
+            <button class="nav-link" data-view="chatbot">
+                <span class="nav-icon" data-icon="assistant"></span>
+                <span data-i18n="navAssistant">Assistant</span>
+            </button>
+            <button class="nav-link" data-view="profile">
+                <span class="nav-icon" data-icon="profile"></span>
+                <span data-i18n="navProfile">Profile</span>
+            </button>
+            <button class="nav-link" onclick="logout()">
+                <span class="nav-icon" data-icon="logout"></span>
+                <span data-i18n="logout">Logout</span>
+            </button>
+        </nav>
+
+        <div class="sidebar-footer">
+            <span id="sidebar_user">Guest</span>
+        </div>
+    </aside>
+
+    <section class="workspace">
+        <header class="workspace-header">
+            <div>
+                <p class="eyebrow dark" data-i18n="dashboardEyebrow">Dashboard</p>
+                <h1 id="dashboard_title" data-i18n="dashboard">Charging Station Control</h1>
+                <p data-i18n="dashboardSubtitle">Find nearby stations, reserve a slot, and track every booking from one panel.</p>
+            </div>
+
+        </header>
+
+        <section class="dashboard-view active" id="view_stations">
+            <div class="panel-header">
+                <div>
+                    <h2 data-i18n="findStations">Find EV Charging Stations</h2>
+                    <p data-i18n="findStationsHelp">Use current location, or continue with nearest available EV charging stations.</p>
+                </div>
+                <div class="panel-actions">
+                    <button class="secondary-button icon-button" id="find_station_btn" onclick="findStations()">
+                        <span class="button-icon" data-icon="location"></span>
+                        <span data-i18n="findStation">Use Current Location</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="location-choice">
+                <div>
+                    <strong data-i18n="locationChoiceTitle">Location access is optional</strong>
+                    <p data-i18n="locationChoiceText">If you do not enable it, we will show nearby default stations and let you browse more.</p>
+                    <p id="location_status" class="location-status"></p>
+                </div>
+                <div class="location-choice-actions">
+                    <button type="button" class="outline-button" onclick="showNearestStations()">
+                        <span class="button-icon" data-icon="nearby"></span>
+                        <span data-i18n="showNearest">Show nearest stations</span>
+                    </button>
+                    <button type="button" class="outline-button" onclick="clearStationResults()">
+                        <span data-i18n="clearResults">Clear results</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="search-card city-search-card">
+                <h2>Search by City or Pincode</h2>
+                <p>Book realtime EV charging stations using a city name or postal pincode (e.g. 678001).</p>
+                <form id="city_search_form" class="city-search-form">
+                    <div class="city-search-fields">
+                        <input id="city_search_input" type="text" placeholder="City name (e.g. Coimbatore)" autocomplete="off">
+                        <input id="pincode_search_input" type="text" placeholder="Pincode (e.g. 678001)" inputmode="numeric" maxlength="10" autocomplete="off">
+                    </div>
+                    <button type="submit" class="search-btn">Search EV Charging Stations</button>
+                </form>
+            </div>
+
+            <div class="summary-strip">
+                <div>
+                    <strong id="station_count">0</strong>
+                    <span data-i18n="stationsFound">EV charging stations found</span>
+                </div>
+                <div>
+                    <strong id="active_booking_count">0</strong>
+                    <span data-i18n="activeBookings">active bookings</span>
+                </div>
+            </div>
+
+            <div class="station-workspace">
+                <div>
+                    <div id="stations" class="station-grid"></div>
+                    <button id="see_more_btn" class="see-more-button" onclick="seeMoreStations()">
+                        <span class="button-icon" data-icon="more"></span>
+                    <span id="see_more_text" data-i18n="seeMore">See 5 More EV Charging Stations</span>
+                    </button>
+                </div>
+
+                <aside class="booking-panel booking-panel-compact" id="booking_panel">
+                    <div class="booking-panel-header">
+                        <span data-i18n="selectedStationLabel">Selected station</span>
+                        <strong id="selected_station_name" data-i18n="chooseStation">Choose a station</strong>
+                        <p id="selected_station_address" data-i18n="chooseStationHelp">Pick a station, choose date and time in the panel, then confirm booking.</p>
+                    </div>
+
+                    <form id="booking_form">
+                        <label>
+                            <span data-i18n="bookingTime">Booking time</span>
+                            <input id="booking_time" type="datetime-local" required>
+                        </label>
+                        <label>
+                            <span data-i18n="chargingUnits">Charging units</span>
+                            <input id="booking_units" type="number" min="1" value="10" required>
+                        </label>
+                        <label>
+                            <span data-i18n="chargerType">Charger type</span>
+                            <select id="booking_charger">
+                                <option value="Fast DC">Fast DC</option>
+                                <option value="AC Charger">AC Charger</option>
+                                <option value="Ultra Fast">Ultra Fast</option>
+                            </select>
+                        </label>
+                        <div class="booking-total">
+                            <span data-i18n="estimatedTotal">Estimated total</span>
+                            <strong id="booking_total">Rs 180.00</strong>
+                        </div>
+                        <button type="submit" class="icon-button">
+                            <span class="button-icon" data-icon="confirm"></span>
+                            <span data-i18n="confirmBooking">Confirm Booking</span>
+                        </button>
+                        <p id="booking_status" class="message"></p>
+                    </form>
+                </aside>
+            </div>
+        </section>
+
+        <section class="dashboard-view" id="view_bookings">
+            <div class="panel-header">
+                <div>
+                    <h2 id="booking_title" data-i18n="myBookings">My Bookings</h2>
+                    <p data-i18n="myBookingsHelp">Review active bookings and past booking history.</p>
+                </div>
+                <button class="secondary-button icon-button" id="show_booking_btn" onclick="showBookings()">
+                    <span class="button-icon" data-icon="refresh"></span>
+                    <span data-i18n="showBookings">Refresh Bookings</span>
+                </button>
+            </div>
+            <div id="bookings" class="booking-list"></div>
+        </section>
+
+        <section class="dashboard-view" id="view_payments">
+            <div class="panel-header">
+                <div>
+                    <h2 data-i18n="payments">Payments</h2>
+                    <p data-i18n="paymentsHelp">Preview the expected charging cost before payment.</p>
+                </div>
+            </div>
+            <div class="payment-panel">
+                <span data-i18n="estimatedCharge">Estimated charge</span>
+                <strong id="payment_estimate">Rs 0.00</strong>
+                <p data-i18n="paymentHint">Select a station and units to generate a booking estimate.</p>
+                <p id="payment_status" class="message"></p>
+                <a class="station-map-link" href="/payment.html" style="margin-top:14px;">Go to Payment Page</a>
+                <p class="message" style="margin-top:12px;">Station inbox updates instantly inside the app.</p>
+            </div>
+        </section>
+
+        <section class="dashboard-view" id="view_chatbot">
+            <div class="panel-header chat-panel-header">
+                <div>
+                    <h2 data-i18n="assistantTitle">EV Assistant</h2>
+                    <p data-i18n="assistantHelp">Chat in your language to find stations, book, check bookings, or estimate cost.</p>
+                    <p class="language-support-note" data-i18n="languagesSupportedHint">Supported languages: English, Tamil, Hindi, Telugu, Kannada, Malayalam, Sanskrit.</p>
+                </div>
+                <label class="chat-language-picker">
+                    <span data-i18n="chatLanguageLabel">Language</span>
+                    <select id="language" class="compact-select" onchange="changeLanguage()" aria-label="Assistant language"></select>
+                </label>
+            </div>
+            <div class="chatbot-panel">
+                <div id="chat_messages" class="chat-messages"></div>
+                <div class="quick-prompts">
+                    <button type="button" data-chat-prompt-key="promptStationsQuery"><span data-i18n="promptStations">Show available stations</span></button>
+                    <button type="button" data-chat-prompt-key="promptBook"><span data-i18n="promptBook">Book a station</span></button>
+                    <button type="button" data-chat-prompt-key="promptBookings"><span data-i18n="promptBookings">Show bookings</span></button>
+                    <button type="button" data-chat-prompt-key="promptCost"><span data-i18n="promptCost">Estimate cost</span></button>
+                </div>
+                <div id="assistant_booking_actions" class="assistant-booking-actions" hidden>
+                    <p id="assistant_booking_hint" class="assistant-booking-hint"></p>
+                    <div class="assistant-booking-buttons">
+                        <button type="button" id="assistant_book_slot_btn" class="outline-button assistant-book-slot-btn">
+                            <span data-i18n="book">Book Slot</span>
+                        </button>
+                        <button type="button" id="assistant_confirm_booking_btn" class="search-btn assistant-confirm-booking-btn" disabled>
+                            <span data-i18n="confirmBooking">Confirm Booking</span>
+                        </button>
+                    </div>
+                </div>
+                <form id="chat_form" class="chat-form">
+                    <input id="chat_input" type="text" data-placeholder-key="chatPlaceholder" placeholder="Ask the EV assistant..." autocomplete="off">
+                    <button type="submit" data-i18n="send">Send</button>
+                </form>
+            </div>
+        </section>
+
+        <section class="dashboard-view" id="view_profile">
+            <div class="panel-header">
+                <div>
+                    <h2 data-i18n="profile">Profile</h2>
+                    <p data-i18n="profileHelp">Your current signed-in session.</p>
+                </div>
+            </div>
+            <div class="profile-panel">
+                <span data-i18n="usernameLabel">Username</span>
+                <strong id="profile_username">Guest</strong>
+            </div>
+        </section>
+    </section>
+</main>
+
+    <script src="/static/booking-format.js?v=1"></script>
+    <script src="/static/dashboard.js?v=60"></script>
+</body>
+</html>

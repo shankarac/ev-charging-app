@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Station Inbox</title>
+    <link rel="stylesheet" href="/static/style.css?v=11">
+</head>
+<body class="app-body">
+    <main class="station-inbox-shell">
+        <div class="card">
+            <div class="station-inbox-header">
+                <div>
+                    <p class="eyebrow dark">Station Inbox</p>
+                    <h1>Incoming EV Charging Notifications</h1>
+                    <p class="message">Bookings and payments are stored here instantly by the app.</p>
+                </div>
+                <div class="notification-toolbar">
+                    <input id="station_filter" type="text" placeholder="Filter by station name">
+                    <button id="refresh_btn" class="secondary-button" onclick="loadNotifications()">Refresh</button>
+                </div>
+            </div>
+
+            <p id="inbox_status" class="message"></p>
+            <div id="notification_list" class="notification-list"></div>
+        </div>
+    </main>
+
+<script src="/static/booking-format.js?v=1"></script>
+<script>
+async function loadNotifications(){
+    const filter = document.getElementById("station_filter").value.trim()
+    const status = document.getElementById("inbox_status")
+    const list = document.getElementById("notification_list")
+    status.innerText = "Loading notifications..."
+    try{
+        const params = new URLSearchParams({ limit: "50" })
+        if(filter){
+            params.set("station_name", filter)
+        }
+        const response = await fetch(`/station-notifications?${params.toString()}`)
+        const data = await response.json()
+        const notifications = Array.isArray(data) ? data : []
+        status.innerText = notifications.length ? `${notifications.length} notifications loaded` : "No notifications yet"
+        if(notifications.length === 0){
+            list.innerHTML = `<div class="empty-state">No incoming notifications.</div>`
+            return
+        }
+
+        list.innerHTML = notifications.map(function(item){
+            const eventClass = item.event_type === "payment" ? "payment" : "booking"
+            const unreadClass = item.is_read ? "" : " unread"
+            return `
+                <article class="notification-card${unreadClass}">
+                    <div class="notification-top">
+                        <div>
+                            <h3 class="notification-title">${item.station_name}</h3>
+                            <div class="notification-badges">
+                                <span class="notification-badge ${eventClass}">${item.event_type}</span>
+                                <span class="notification-badge">${item.payment_status || "Booked"}</span>
+                            </div>
+                        </div>
+                        <span class="notification-badge">${item.created_at}</span>
+                    </div>
+                    <div class="notification-meta">
+                        <div><strong>User:</strong> ${item.username}</div>
+                        <div><strong>Address:</strong> ${item.station_address}</div>
+                        <div><strong>Distance:</strong> ${item.distance}</div>
+                        <div><strong>Booking Time:</strong> ${formatBookingTimeEnglish(item.booking_time)}</div>
+                        <div><strong>Charger:</strong> ${item.charger_type}</div>
+                        <div><strong>Units:</strong> ${item.units}</div>
+                        <div><strong>Price:</strong> Rs ${Number(item.price).toFixed(2)}</div>
+                        ${item.payment_reference ? `<div><strong>Payment Ref:</strong> ${item.payment_reference}</div>` : ""}
+                    </div>
+                    <div class="notification-links">
+                        <a class="station-map-link" href="${item.station_map_url}" target="_blank" rel="noopener noreferrer">Open Map</a>
+                        <a class="station-map-link" href="${item.booking_history_url}" target="_blank" rel="noopener noreferrer">Booking History</a>
+                        <a class="station-map-link" href="${item.payment_page_url}" target="_blank" rel="noopener noreferrer">Payment Page</a>
+                        <button class="secondary-button" onclick="markRead(${item.id})">Mark Read</button>
+                    </div>
+                </article>
+            `
+        }).join("")
+    }
+    catch(error){
+        status.innerText = "Failed to load notifications"
+        list.innerHTML = `<div class="empty-state">Unable to load notifications.</div>`
+        console.log(error)
+    }
+}
+
+async function markRead(id){
+    await fetch(`/station-notifications/${id}/read`, { method: "POST" })
+    loadNotifications()
+}
+
+document.getElementById("station_filter").addEventListener("input", function(){
+    loadNotifications()
+})
+
+window.onload = function(){
+    loadNotifications()
+    setInterval(loadNotifications, 5000)
+}
+</script>
+</body>
+</html>

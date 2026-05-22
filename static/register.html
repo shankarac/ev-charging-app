@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EV Register</title>
+    <link rel="stylesheet" href="/static/style.css?v=9">
+</head>
+<body>
+<div class="container">
+    <div class="card">
+        <h2>Create Account</h2>
+        <p class="form-subtitle">Register with your email to book EV charging stations.</p>
+
+        <input type="email" id="register_email" placeholder="Email address (e.g. name@gmail.com)" autocomplete="email" required>
+        <p class="form-subtitle" id="register_email_hint">Any valid email address can register.</p>
+        <input type="password" id="register_pass" placeholder="Password" autocomplete="new-password" required>
+        <input type="password" id="register_pass_confirm" placeholder="Re-enter password" autocomplete="new-password" required>
+
+        <button id="register_btn" onclick="register()">Register</button>
+        <p id="register_msg" class="message"></p>
+        <p><a href="/login.html">Already have account?</a></p>
+    </div>
+</div>
+
+<script src="/static/auth-email.js?v=6"></script>
+<script>
+function isValidEmail(value){
+    return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(String(value || "").trim())
+}
+
+async function register(){
+    const email = document.getElementById("register_email").value.trim()
+    const password = document.getElementById("register_pass").value
+    const confirmPassword = document.getElementById("register_pass_confirm").value
+    const message = document.getElementById("register_msg")
+
+    if(!email || !password || !confirmPassword){
+        message.innerText = "Fill all fields"
+        return
+    }
+
+    const emailError = emailValidationMessage(email)
+    if(emailError){
+        message.innerText = emailError
+        return
+    }
+
+    if(password !== confirmPassword){
+        message.innerText = "Passwords do not match"
+        return
+    }
+
+    if(password.length < 6){
+        message.innerText = "Password must be at least 6 characters"
+        return
+    }
+
+    try{
+        const response = await fetch("/register", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                email: email,
+                password: password,
+                confirm_password: confirmPassword
+            })
+        })
+        const data = await response.json()
+        if(!response.ok && data.detail){
+            const detail = Array.isArray(data.detail)
+                ? data.detail.map(function(item){ return item.msg || item }).join(", ")
+                : data.detail
+            message.innerText = detail
+            return
+        }
+        message.innerText = data.message
+        if(data.message === "Registration successful"){
+            window.location.href = "/login.html"
+        }
+    }
+    catch(error){
+        message.innerText = "Backend not running"
+        console.log(error)
+    }
+}
+
+window.onload = async function(){
+    await loadEmailPolicy()
+    const hint = document.getElementById("register_email_hint")
+    if(hint){
+        hint.innerText = allowedEmailDomainsMessage()
+    }
+}
+</script>
+</body>
+</html>

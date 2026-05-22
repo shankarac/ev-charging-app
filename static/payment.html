@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment</title>
+    <link rel="stylesheet" href="/static/style.css?v=26">
+</head>
+
+<body>
+
+<main class="station-inbox-shell">
+    <div class="card">
+        <p class="eyebrow dark">Payment</p>
+        <h1>Complete your booking payment</h1>
+        <p id="payment_summary" class="message"></p>
+        <input id="card_number" type="text" placeholder="Card Number">
+        <input id="cvv" type="text" placeholder="CVV">
+        <button onclick="payNow()">Pay Now</button>
+        <p id="payment_status" class="message"></p>
+    </div>
+</main>
+
+<script src="/static/booking-format.js?v=1"></script>
+<script>
+function getBookingPayload(){
+    const storedBooking = localStorage.getItem("tempBooking")
+    return storedBooking ? JSON.parse(storedBooking) : null
+}
+
+function renderSummary(){
+    const booking = getBookingPayload()
+    const summary = document.getElementById("payment_summary")
+    if(!booking){
+        summary.innerText = "No booking found. Please book a station first."
+        return
+    }
+
+    summary.innerText = `${booking.station_name} | ${formatBookingTimeEnglish(booking.booking_time)} | Rs ${Number(booking.price).toFixed(2)}`
+}
+
+function payNow(){
+    const booking = getBookingPayload()
+    const status = document.getElementById("payment_status")
+    status.className = "message"
+    if(!booking){
+        status.innerText = "No booking selected for payment"
+        return
+    }
+
+    status.innerText = "Processing payment..."
+    fetch("/payments/confirm", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        credentials: "same-origin",
+        body: JSON.stringify({
+            username: booking.username,
+            station_name: booking.station_name,
+            station_address: booking.station_address,
+            booking_time: booking.booking_time,
+            charger_type: booking.charger_type,
+            units: booking.units,
+            price: booking.price,
+            payment_reference: "dummy-payment"
+        })
+    }).then(function(response){
+        return response.json().then(function(data){
+            return { ok: response.ok, data: data }
+        })
+    }).then(function(result){
+        if(!result.ok){
+            status.innerText = result.data.message || "Payment failed"
+            return
+        }
+
+        localStorage.removeItem("tempBooking")
+        status.className = "message success"
+        status.innerText = result.data.message || "Payment successful!"
+        window.setTimeout(function(){
+            window.location.href = "/dashboard.html"
+        }, 2200)
+    }).catch(function(){
+        status.innerText = "Payment failed"
+    })
+}
+
+renderSummary()
+
+</script>
+
+</body>
+
+</html>

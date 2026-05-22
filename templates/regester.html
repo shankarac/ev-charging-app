@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+content="width=device-width, initial-scale=1.0">
+
+<title>
+EV Charge Login
+</title>
+
+<link
+href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+rel="stylesheet">
+
+<style>
+
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:'Poppins',sans-serif;
+}
+
+body{
+
+    height:100vh;
+
+    overflow:hidden;
+
+    background:#031716;
+
+    display:flex;
+
+    justify-content:center;
+
+    align-items:center;
+
+    padding:30px;
+}
+
+.container{
+
+    width:100%;
+
+    max-width:1600px;
+
+    height:92vh;
+
+    display:flex;
+
+    border-radius:30px;
+
+    overflow:hidden;
+
+    background:white;
+
+    box-shadow:
+    0px 25px 60px rgba(0,0,0,0.35);
+}
+
+.left{
+
+    width:58%;
+
+    position:relative;
+
+    background:
+    linear-gradient(
+        rgba(0,0,0,0.55),
+        rgba(0,0,0,0.55)
+    ),
+    url('https://images.unsplash.com/photo-1593941707882-a5bac6861d75?q=80&w=1974&auto=format&fit=crop');
+
+    background-size:cover;
+    background-position:center;
+
+    padding:60px;
+
+    color:white;
+
+    display:flex;
+
+    flex-direction:column;
+
+    justify-content:space-between;
+}
+
+.overlay{
+
+    position:absolute;
+
+    inset:0;
+
+    background:
+    linear-gradient(
+        135deg,
+        rgba(7,27,27,0.75),
+        rgba(15,118,110,0.45)
+    );
+}
+
+.left-content{
+
+    position:relative;
+
+    z-index:2;
+}
+
+.logo{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:18px;
+}
+
+.logo-box{
+
+    width:72px;
+    height:72px;
+
+    border-radius:18px;
+
+    background:rgba(255,255,255,0.12);
+
+    backdrop-filter:blur(12px);
+
+    border:1px solid rgba(255,255,255,0.2);
+
+    display:flex;
+
+    justify-content:center;
+    align-items:center;
+
+    font-size:32px;
+    font-weight:700;
+}
+
+.logo-text h2{
+
+    font-size:34px;
+
+    margin-bottom:4px;
+}
+
+.logo-text p{
+
+    color:#D1FAE5;
+
+    font-size:17px;
+}
+
+.hero{
+
+    margin-top:120px;
+
+    max-width:700px;
+}
+
+.hero h1{
+
+    font-size:84px;
+
+    line-height:1.05;
+
+    font-weight:700;
+
+    margin-bottom:28px;
+}
+
+.hero p{
+
+    font-size:24px;
+
+    line-height:1.8;
+
+    color:#E2E8F0;
+}
+
+.features{
+
+    display:flex;
+
+    gap:18px;
+
+    margin-top:45px;
+
+    flex-wrap:wrap;
+}
+
+.feature{
+
+    padding:14px 22px;
+
+    border-radius:16px;
+
+    background:rgba(255,255,255,0.1);
+
+    backdrop-filter:blur(10px);
+
+    border:1px solid rgba(255,255,255,0.15);
+
+    font-size:16px;
+}
+
+.right{
+
+    width:42%;
+
+    background:#F8FAFC;
+
+    display:flex;
+
+    justify-content:center;
+
+    align-items:center;
+
+    padding:60px;
+}
+
+.login-card{
+
+    width:100%;
+
+    max-width:500px;
+}
+
+.small{
+
+    color:#0F766E;
+
+    font-size:18px;
+
+    font-weight:600;
+
+    margin-bottom:12px;
+}
+
+.login-card h1{
+
+    font-size:64px;
+
+    color:#0F172A;
+
+    margin-bottom:14px;
+}
+
+.subtitle{
+
+    font-size:20px;
+
+    color:#64748B;
+
+    margin-bottom:35px;
+}
+
+.google-btn{
+
+    width:100%;
+
+    padding:20px;
+
+    border-radius:18px;
+
+    border:1px solid #CBD5E1;
+
+    background:white;
+
+    font-size:20px;
+
+    cursor:pointer;
+
+    margin-bottom:28px;
+
+    transition:0.3s;
+}
+
+.google-btn:hover{
+
+    background:#F1F5F9;
+}
+
+.divider{
+
+    text-align:center;
+
+    color:#94A3B8;
+
+    margin-bottom:25px;
+
+    position:relative;
+}
+
+.divider::before{
+
+    content:"";
+
+    position:absolute;
+
+    left:0;
+    top:50%;
+
+    width:42%;
+
+    height:1px;
+
+    background:#CBD5E1;
+}
+
+.divider::after{
+
+    content:"";
+
+    position:absolute;
+
+    right:0;
+    top:50%;
+
+    width:42%;
+
+    height:1px;
+
+    background:#CBD5E1;
+}
+
+input{
+
+    width:100%;
+
+    padding:22px;
+
+    border-radius:18px;
+
+    border:1px solid #CBD5E1;
+
+    margin-bottom:20px;
+
+    font-size:18px;
+
+    outline:none;
+
+    transition:0.3s;
+}
+
+input:focus{
+
+    border-color:#0F766E;
+
+    box-shadow:
+    0px 0px 0px 4px rgba(15,118,110,0.15);
+}
+
+.login-btn{
+
+    width:100%;
+
+    padding:22px;
+
+    border:none;
+
+    border-radius:18px;
+
+    background:#0F766E;
+
+    color:white;
+
+    font-size:22px;
+
+    font-weight:600;
+
+    cursor:pointer;
+
+    transition:0.3s;
+}
+
+.login-btn:hover{
+
+    background:#115E59;
+
+    transform:translateY(-2px);
+}
+
+.bottom{
+
+    text-align:center;
+
+    margin-top:28px;
+
+    color:#64748B;
+
+    font-size:18px;
+}
+
+.bottom a{
+
+    color:#0F766E;
+
+    text-decoration:none;
+
+    font-weight:600;
+}
+
+@media(max-width:1200px){
+
+    .hero h1{
+
+        font-size:64px;
+    }
+}
+
+@media(max-width:980px){
+
+    body{
+
+        overflow:auto;
+    }
+
+    .container{
+
+        flex-direction:column;
+
+        height:auto;
+    }
+
+    .left,
+    .right{
+
+        width:100%;
+    }
+
+    .hero{
+
+        margin-top:80px;
+    }
+
+    .hero h1{
+
+        font-size:52px;
+    }
+
+    .right{
+
+        padding:40px;
+    }
+
+    .login-card h1{
+
+        font-size:46px;
+    }
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="left">
+
+        <div class="overlay"></div>
+
+        <div class="left-content">
+
+            <div class="logo">
+
+                <div class="logo-box">
+                    EV
+                </div>
+
+                <div class="logo-text">
+
+                    <h2>
+                        EV Charge
+                    </h2>
+
+                    <p>
+                        Smart Charging Platform
+                    </p>
+
+                </div>
+
+            </div>
+
+            <div class="hero">
+
+                <h1>
+                    Charge smarter,
+                    travel further.
+                </h1>
+
+                <p>
+
+                    Discover realtime EV charging stations,
+                    reserve slots instantly,
+                    manage bookings,
+                    and navigate seamlessly with live maps.
+
+                </p>
+
+                <div class="features">
+
+                    <div class="feature">
+                        ⚡ Live Stations
+                    </div>
+
+                    <div class="feature">
+                        📍 Google Maps
+                    </div>
+
+                    <div class="feature">
+                        🔋 Smart Booking
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <div class="right">
+
+        <div class="login-card">
+
+            <div class="small">
+                WELCOME BACK
+            </div>
+
+            <h1>
+                EV Login
+            </h1>
+
+            <div class="subtitle">
+                Login to access your charging dashboard
+            </div>
+
+            <a href="/google-login">
+
+                <button class="google-btn">
+
+                    Continue with Google
+
+                </button>
+
+            </a>
+
+            <div class="divider">
+                OR
+            </div>
+
+            <form
+            action="/login"
+            method="post"
+            >
+
+                <input
+                type="text"
+                name="username"
+                placeholder="Username"
+                required
+                >
+
+                <input
+                type="password"
+                name="password"
+                placeholder="Password"
+                required
+                >
+
+                <button
+                type="submit"
+                class="login-btn"
+                >
+
+                    Login
+
+                </button>
+
+            </form>
+
+            <div class="bottom">
+
+                Don't have an account?
+
+                <a href="/register">
+
+                    Create account
+
+                </a>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+</body>
+
+</html>

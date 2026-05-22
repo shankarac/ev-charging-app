@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+content="width=device-width, initial-scale=1.0">
+
+<title>
+My Bookings
+</title>
+
+<link
+href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+rel="stylesheet">
+
+<style>
+
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:'Poppins',sans-serif;
+}
+
+body{
+
+    background:#EEF3F2;
+
+    padding:40px;
+}
+
+.topbar{
+
+    display:flex;
+
+    justify-content:space-between;
+
+    align-items:center;
+
+    margin-bottom:40px;
+
+    flex-wrap:wrap;
+
+    gap:20px;
+}
+
+.topbar h1{
+
+    font-size:56px;
+
+    color:#0F172A;
+}
+
+.back{
+
+    text-decoration:none;
+}
+
+.back button{
+
+    padding:18px 30px;
+
+    border:none;
+
+    border-radius:18px;
+
+    background:#0F766E;
+
+    color:white;
+
+    font-size:18px;
+
+    cursor:pointer;
+}
+
+.grid{
+
+    display:grid;
+
+    grid-template-columns:
+    repeat(auto-fit,minmax(360px,1fr));
+
+    gap:28px;
+}
+
+.card{
+
+    background:white;
+
+    border-radius:28px;
+
+    overflow:hidden;
+
+    box-shadow:
+    0px 10px 30px rgba(0,0,0,0.05);
+
+    transition:0.3s;
+}
+
+.card:hover{
+
+    transform:translateY(-6px);
+}
+
+.banner{
+
+    height:180px;
+
+    background:
+    linear-gradient(
+        135deg,
+        #0F766E,
+        #134E4A
+    );
+
+    position:relative;
+
+    overflow:hidden;
+}
+
+.banner::before{
+
+    content:"";
+
+    position:absolute;
+
+    width:220px;
+    height:220px;
+
+    border-radius:50%;
+
+    background:
+    rgba(255,255,255,0.08);
+
+    top:-60px;
+    right:-60px;
+}
+
+.content{
+
+    padding:30px;
+}
+
+.content h2{
+
+    font-size:34px;
+
+    margin-bottom:14px;
+
+    color:#0F172A;
+}
+
+.address{
+
+    color:#64748B;
+
+    font-size:18px;
+
+    line-height:1.7;
+
+    margin-bottom:16px;
+}
+
+.time{
+
+    display:inline-block;
+
+    padding:10px 16px;
+
+    border-radius:14px;
+
+    background:#DBEAFE;
+
+    color:#1D4ED8;
+
+    font-size:15px;
+
+    font-weight:600;
+
+    margin-bottom:24px;
+}
+
+.cancel-btn{
+
+    width:100%;
+
+    padding:18px;
+
+    border:none;
+
+    border-radius:16px;
+
+    background:#DC2626;
+
+    color:white;
+
+    font-size:18px;
+
+    cursor:pointer;
+
+    transition:0.3s;
+}
+
+.cancel-btn:hover{
+
+    background:#B91C1C;
+}
+
+.empty{
+
+    background:white;
+
+    padding:80px;
+
+    border-radius:28px;
+
+    text-align:center;
+
+    box-shadow:
+    0px 10px 30px rgba(0,0,0,0.04);
+}
+
+.empty h2{
+
+    font-size:42px;
+
+    margin-bottom:18px;
+}
+
+.empty p{
+
+    color:#64748B;
+
+    font-size:20px;
+}
+
+@media(max-width:900px){
+
+    body{
+
+        padding:20px;
+    }
+
+    .topbar h1{
+
+        font-size:40px;
+    }
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="topbar">
+
+    <h1>
+        My EV Bookings
+    </h1>
+
+    <a
+    href="/dashboard"
+    class="back"
+    >
+
+        <button>
+
+            Back Dashboard
+
+        </button>
+
+    </a>
+
+</div>
+
+{% if bookings|length == 0 %}
+
+<div class="empty">
+
+    <h2>
+        No Active Bookings
+    </h2>
+
+    <p>
+
+        Your EV charging bookings
+        will appear here.
+
+    </p>
+
+</div>
+
+{% endif %}
+
+<div class="grid">
+
+{% for booking in bookings %}
+
+<div class="card">
+
+    <div class="banner"></div>
+
+    <div class="content">
+
+        <h2>
+
+            {{ booking[0] }}
+
+        </h2>
+
+        <div class="address">
+
+            {{ booking[1] }}
+
+        </div>
+
+        <div class="time">
+
+            {{ booking[2] }}
+
+        </div>
+
+        <form
+        action="/cancel_booking"
+        method="post"
+        >
+
+            <input
+            type="hidden"
+            name="station"
+            value="{{ booking[0] }}"
+            >
+
+            <button
+            type="submit"
+            class="cancel-btn"
+            >
+
+                Cancel Booking
+
+            </button>
+
+        </form>
+
+    </div>
+
+</div>
+
+{% endfor %}
+
+</div>
+
+</body>
+
+</html>

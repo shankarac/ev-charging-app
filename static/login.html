@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        EV Charging Login
+    </title>
+
+    <link
+        rel="stylesheet"
+        href="/static/style.css?v=9"
+    >
+
+</head>
+
+<body>
+
+<main class="auth-shell">
+
+    <section class="brand-panel">
+
+        <div class="brand-mark">
+            EV
+        </div>
+
+        <div class="brand-copy-wrap">
+
+            <p class="eyebrow">
+                Charging network
+            </p>
+
+            <h1>
+                Book nearby EV charging with confidence.
+            </h1>
+
+            <p class="brand-copy">
+                Find available stations, reserve charging slots, and keep every booking in one simple dashboard.
+            </p>
+
+        </div>
+
+    </section>
+
+    <section class="form-panel">
+
+        <div class="form-card">
+
+            <h2>
+                EV Charging Login
+            </h2>
+
+            <p class="form-subtitle">
+                Sign in to manage your charging bookings.
+            </p>
+
+            <button type="button" id="google_signin_btn" class="secondary-action" onclick="signInWithGoogle()">
+                Continue with Google
+            </button>
+
+            <p class="divider-text">
+                or sign in manually
+            </p>
+
+            <form id="login_form" class="login-panel active" novalidate>
+                <input
+                    type="email"
+                    id="login_email"
+                    placeholder="Email address (e.g. name@gmail.com)"
+                    autocomplete="email"
+                    required
+                >
+
+                <input
+                    type="password"
+                    id="login_pass"
+                    placeholder="Password"
+                    autocomplete="current-password"
+                    required
+                >
+
+                <button
+                    id="login_btn"
+                    type="submit"
+                >
+                    Login with Email
+                </button>
+            </form>
+
+            <p id="login_msg" class="message"></p>
+
+            <p class="account-link">
+                <a href="/forgot-password.html">Forgot password?</a>
+            </p>
+
+            <p class="account-link bottom-link">
+                New to EV Charging?
+
+                <a href="/register.html">
+                    Create Account
+                </a>
+            </p>
+
+        </div>
+
+    </section>
+
+</main>
+
+<script src="/static/auth-email.js?v=6"></script>
+<script src="/static/script.js?v=17"></script>
+
+</body>
+
+</html>

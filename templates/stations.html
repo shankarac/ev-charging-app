@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+content="width=device-width, initial-scale=1.0">
+
+        <title>
+            Realtime EV Charging Stations
+        </title>
+
+<link
+href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+rel="stylesheet">
+
+<style>
+
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:'Poppins',sans-serif;
+}
+
+body{
+
+    background:#EEF3F2;
+
+    padding:40px;
+}
+
+.topbar{
+
+    display:flex;
+
+    justify-content:space-between;
+
+    align-items:center;
+
+    margin-bottom:40px;
+
+    flex-wrap:wrap;
+
+    gap:20px;
+}
+
+.topbar h1{
+
+    font-size:54px;
+
+    color:#0F172A;
+}
+
+.back{
+
+    text-decoration:none;
+}
+
+.back button{
+
+    padding:18px 30px;
+
+    border:none;
+
+    border-radius:18px;
+
+    background:#0F766E;
+
+    color:white;
+
+    font-size:18px;
+
+    cursor:pointer;
+}
+
+.grid{
+
+    display:grid;
+
+    grid-template-columns:
+    repeat(auto-fit,minmax(360px,1fr));
+
+    gap:28px;
+}
+
+.card{
+
+    background:white;
+
+    border-radius:28px;
+
+    overflow:hidden;
+
+    box-shadow:
+    0px 10px 30px rgba(0,0,0,0.05);
+
+    transition:0.3s;
+}
+
+.card:hover{
+
+    transform:translateY(-6px);
+}
+
+.card img{
+
+    width:100%;
+
+    height:240px;
+
+    object-fit:cover;
+}
+
+.content{
+
+    padding:28px;
+}
+
+.content h2{
+
+    font-size:32px;
+
+    margin-bottom:12px;
+
+    color:#0F172A;
+}
+
+.address{
+
+    color:#64748B;
+
+    font-size:18px;
+
+    margin-bottom:10px;
+
+    line-height:1.7;
+}
+
+.distance{
+
+    font-size:18px;
+
+    margin-bottom:20px;
+
+    color:#334155;
+}
+
+.badges{
+
+    display:flex;
+
+    gap:12px;
+
+    flex-wrap:wrap;
+
+    margin-bottom:24px;
+}
+
+.badge{
+
+    padding:10px 16px;
+
+    border-radius:14px;
+
+    font-size:15px;
+
+    font-weight:600;
+}
+
+.available{
+
+    background:#DCFCE7;
+
+    color:#166534;
+}
+
+.fast{
+
+    background:#DBEAFE;
+
+    color:#1D4ED8;
+}
+
+.buttons{
+
+    display:flex;
+
+    gap:16px;
+}
+
+.buttons a,
+.buttons form{
+
+    flex:1;
+}
+
+.buttons button{
+
+    width:100%;
+
+    padding:18px;
+
+    border:none;
+
+    border-radius:16px;
+
+    font-size:17px;
+
+    cursor:pointer;
+
+    transition:0.3s;
+}
+
+.map-btn{
+
+    background:#E2E8F0;
+
+    color:#0F172A;
+}
+
+.map-btn:hover{
+
+    background:#CBD5E1;
+}
+
+.book-btn{
+
+    background:#0F766E;
+
+    color:white;
+}
+
+.book-btn:hover{
+
+    background:#115E59;
+}
+
+.empty{
+
+    background:white;
+
+    padding:60px;
+
+    border-radius:28px;
+
+    text-align:center;
+
+    font-size:24px;
+
+    color:#64748B;
+}
+
+@media(max-width:900px){
+
+    body{
+
+        padding:20px;
+    }
+
+    .topbar h1{
+
+        font-size:38px;
+    }
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="topbar">
+
+    <h1>
+
+        {{ stations|length }}
+
+        Realtime EV Charging Stations
+
+    </h1>
+
+    <a
+    href="/dashboard"
+    class="back"
+    >
+
+        <button>
+
+            Back Dashboard
+
+        </button>
+
+    </a>
+
+</div>
+
+{% if stations|length == 0 %}
+
+<div class="empty">
+
+    No realtime EV charging stations found nearby.
+
+</div>
+
+{% endif %}
+
+<div class="grid">
+
+{% for station in stations %}
+
+{% set info = station.AddressInfo %}
+
+<div class="card">
+
+    <img
+    src="https://images.unsplash.com/photo-1593941707882-a5bac6861d75?q=80&w=1974&auto=format&fit=crop"
+    >
+
+    <div class="content">
+
+        <h2>
+
+            {{ info.Title }}
+
+        </h2>
+
+        <div class="address">
+            {{ info.AddressLine1 }}
+            {% if info.Town %}
+            <br>
+            {{ info.Town }}
+            {% endif %}
+        </div>
+
+        <div class="distance">
+
+            {{ info.Distance }} KM Away
+
+        </div>
+
+        <div class="badges">
+
+            <div class="badge available">
+
+                Available
+
+            </div>
+
+            <div class="badge fast">
+
+                Fast Charger
+
+            </div>
+
+        </div>
+
+        <div class="buttons">
+
+            <a
+            class="station-map-link"
+            href="https://maps.google.com/?q={{ info.Latitude }},{{ info.Longitude }}"
+            target="_blank"
+            rel="noopener noreferrer"
+            >
+                Google Maps
+            </a>
+
+            <form
+            action="/book"
+            method="post"
+            >
+
+                <input
+                type="hidden"
+                name="station"
+                value="{{ info.Title }}"
+                >
+
+                <input
+                type="hidden"
+                name="address"
+                value="{{ info.AddressLine1 }}"
+                >
+
+                <button
+                type="submit"
+                class="book-btn"
+                >
+
+                    Book Station
+
+                </button>
+
+            </form>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endfor %}
+
+</div>
+
+</body>
+
+</html>
