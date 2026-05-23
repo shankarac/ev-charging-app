@@ -32,7 +32,11 @@ class Settings:
     sqlite_migrations_dir = BASE_DIR / "migrations" / "sqlite"
     postgres_migrations_dir = BASE_DIR / "migrations" / "postgres"
     postgres_dsn = os.getenv("POSTGRES_DSN", os.getenv("DATABASE_URL", ""))
-    public_app_url = os.getenv("PUBLIC_APP_URL", "http://127.0.0.1:8000")
+    public_app_url = os.getenv(
+        "PUBLIC_APP_URL",
+        os.getenv("RENDER_EXTERNAL_URL", "http://127.0.0.1:8000"),
+    )
+    session_secret = os.getenv("SESSION_SECRET", "ev-app-session-secret")
     open_charge_map_url = "https://api.openchargemap.io/v3/poi/"
     open_charge_map_api_key = os.getenv("OPENCHARGEMAP_API_KEY", "")
     overpass_url = os.getenv(

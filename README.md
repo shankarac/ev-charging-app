@@ -95,6 +95,25 @@ http://127.0.0.1:8000/station-inbox.html
 
 The inbox auto-refreshes and shows each booking/payment with map, history, and payment links.
 
+## Deploy for end users (Render)
+
+Give friends a normal website link (no Python or GitHub needed on their side).
+
+1. Push this repo to GitHub (if you have not already).
+2. Sign in at [render.com](https://render.com) with GitHub.
+3. Click **New +** → **Blueprint** → connect `shankarac/ev-charging-app`.
+4. Render reads `render.yaml` and creates the web service. Click **Apply**.
+5. Wait until the deploy status is **Live**. Copy the URL, for example:
+   `https://ev-charging-app.onrender.com`
+6. Send that link to your end user. They open it, **Register**, and use the app.
+
+Notes:
+
+- The first visit after idle time on the free plan can take 30–60 seconds while the server wakes up.
+- User accounts and bookings are stored on the server disk configured in `render.yaml`.
+- Optional: in Render → your service → **Environment**, set `OPENCHARGEMAP_API_KEY` if you have one.
+- `PUBLIC_APP_URL` is picked up automatically from Render’s `RENDER_EXTERNAL_URL`.
+
 Google one-click sign-in (no app email/password prompt) can be enabled with:
 
 ```bash

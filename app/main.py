@@ -51,7 +51,7 @@ def create_app():
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.add_middleware(SessionMiddleware, secret_key="ev-app-session-secret")
+    app.add_middleware(SessionMiddleware, secret_key=settings.session_secret)
 
     @app.middleware("http")
     async def add_no_cache_headers(request: Request, call_next):
