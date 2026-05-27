@@ -38,7 +38,7 @@ def fetch_nearby_stations(lat, lon, distance=25, max_results=25):
             "distanceunit": "KM",
             "maxresults": max_results,
         },
-        timeout=10,
+        timeout=25,
     )
 
     if response.status_code != 200:

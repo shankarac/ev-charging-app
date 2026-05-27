@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin · EV Charging</title>
+    <link rel="stylesheet" href="/static/style.css?v=43">
+</head>
+<body class="app-body admin-body">
+
+<header class="admin-topbar">
+    <div>
+        <p class="eyebrow dark">Operations</p>
+        <h1>Admin Console</h1>
+    </div>
+    <div class="admin-topbar-actions">
+        <a class="outline-button" href="/dashboard.html">User dashboard</a>
+        <a class="outline-button" href="/station-inbox.html">Station inbox</a>
+        <button type="button" class="outline-button" onclick="logoutAdmin()">Logout</button>
+    </div>
+</header>
+
+<main class="admin-shell">
+    <nav class="admin-tabs" aria-label="Admin sections">
+        <button type="button" class="admin-tab active" data-tab="config">Station config</button>
+        <button type="button" class="admin-tab" data-tab="stations">Manage stations</button>
+        <button type="button" class="admin-tab" data-tab="reports">Reports</button>
+        <button type="button" class="admin-tab" data-tab="users">Admin users</button>
+    </nav>
+
+    <section class="admin-panel active" id="panel_config">
+        <div class="panel-header">
+            <div>
+                <h2>Station configuration</h2>
+                <p>Control slot limits, booking hours, and how far ahead users can book.</p>
+            </div>
+        </div>
+        <form id="config_form" class="admin-form-grid">
+            <label>
+                <span>Slots per station (display limit)</span>
+                <input type="number" id="cfg_slot_limit" min="1" max="50" required>
+            </label>
+            <label>
+                <span>Booking open hour (0–23)</span>
+                <input type="number" id="cfg_open_hour" min="0" max="23" required>
+            </label>
+            <label>
+                <span>Booking close hour (1–24)</span>
+                <input type="number" id="cfg_close_hour" min="1" max="24" required>
+            </label>
+            <label>
+                <span>Slot interval (minutes)</span>
+                <input type="number" id="cfg_interval" min="15" max="120" step="15" required>
+            </label>
+            <label>
+                <span>Max booking days ahead</span>
+                <input type="number" id="cfg_max_days" min="1" max="365" required>
+            </label>
+            <label>
+                <span>Latest bookable date (calculated)</span>
+                <input type="text" id="cfg_max_date" readonly>
+            </label>
+            <label>
+                <span>Default service charge (Rs)</span>
+                <input type="number" id="cfg_default_service_charge" min="0" step="0.01" required>
+            </label>
+            <label class="admin-span-2">
+                <span>Per-station service charge overrides (JSON)</span>
+                <textarea id="cfg_station_service_charges" rows="4" placeholder='{"Station Name": 25}'></textarea>
+            </label>
+            <div class="admin-form-actions">
+                <button type="submit" class="search-btn">Save configuration</button>
+                <p id="config_status" class="message"></p>
+            </div>
+        </form>
+    </section>
+
+    <section class="admin-panel" id="panel_stations">
+        <div class="panel-header">
+            <div>
+                <h2>Manage stations</h2>
+                <p>Add or remove EV charging stations shown to customers in search results.</p>
+            </div>
+            <button type="button" class="outline-button" onclick="loadManagedStations()">Refresh</button>
+        </div>
+
+        <form id="managed_station_form" class="admin-form-grid">
+            <label>
+                <span>Station name</span>
+                <input type="text" id="ms_name" required placeholder="e.g. Green Charge Hub">
+            </label>
+            <label>
+                <span>City (for location)</span>
+                <input type="text" id="ms_city" placeholder="e.g. Coimbatore">
+            </label>
+            <label class="admin-span-2">
+                <span>Full address</span>
+                <input type="text" id="ms_address" required placeholder="Street, area, state, pincode">
+            </label>
+            <label class="admin-span-2">
+                <span>Station to remove</span>
+                <select id="ms_remove_pick">
+                    <option value="">— Select a station —</option>
+                </select>
+            </label>
+            <div class="admin-form-actions admin-station-actions">
+                <button type="submit" class="search-btn">Add station</button>
+                <button type="button" id="ms_remove_btn" class="admin-btn-remove">Remove station</button>
+                <p id="managed_station_status" class="message"></p>
+            </div>
+        </form>
+
+        <div class="admin-table-wrap admin-stations-list">
+            <h3>Your stations</h3>
+            <table class="admin-table" id="managed_stations_table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Address</th>
+                        <th>Location</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="admin-panel" id="panel_reports">
+        <div class="panel-header">
+            <div>
+                <h2>Booking reports</h2>
+                <p>Overview of bookings, revenue, and station activity.</p>
+            </div>
+            <button type="button" class="outline-button" onclick="loadReports()">Refresh</button>
+        </div>
+
+        <div class="admin-stats-grid" id="report_stats">
+            <article class="admin-stat-card">
+                <span>Total bookings</span>
+                <strong id="stat_total">0</strong>
+            </article>
+            <article class="admin-stat-card">
+                <span>Active bookings</span>
+                <strong id="stat_active">0</strong>
+            </article>
+            <article class="admin-stat-card">
+                <span>Paid revenue</span>
+                <strong id="stat_paid">Rs 0.00</strong>
+            </article>
+            <article class="admin-stat-card">
+                <span>Pending revenue</span>
+                <strong id="stat_pending">Rs 0.00</strong>
+            </article>
+        </div>
+
+        <div class="admin-table-wrap">
+            <h3>Bookings by station</h3>
+            <table class="admin-table" id="station_report_table">
+                <thead>
+                    <tr>
+                        <th>Station</th>
+                        <th>Total</th>
+                        <th>Active</th>
+                        <th>Revenue</th>
+                        <th>Paid</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="admin-table-wrap">
+            <h3>Recent bookings</h3>
+            <table class="admin-table" id="recent_bookings_table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>User</th>
+                        <th>Station</th>
+                        <th>Time</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Payment</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="admin-panel" id="panel_users">
+        <div class="panel-header">
+            <div>
+                <h2>Admin users</h2>
+                <p>Create admins who can configure stations and view reports.</p>
+            </div>
+        </div>
+
+        <form id="admin_user_form" class="admin-form-grid admin-user-form">
+            <label>
+                <span>Admin email</span>
+                <input type="email" id="admin_user_email" required placeholder="admin@company.com">
+            </label>
+            <label>
+                <span>Password</span>
+                <input type="password" id="admin_user_password" required minlength="6" placeholder="Minimum 6 characters">
+            </label>
+            <div class="admin-form-actions">
+                <button type="submit" class="search-btn">Create / promote admin</button>
+                <p id="admin_user_status" class="message"></p>
+            </div>
+        </form>
+
+        <div class="admin-table-wrap">
+            <h3>All users</h3>
+            <table class="admin-table" id="users_table">
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>Created</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </section>
+</main>
+
+<script src="/static/admin.js?v=5"></script>
+</body>
+</html>

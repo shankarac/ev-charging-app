@@ -70,6 +70,14 @@ async function loginWithEmail(){
             return
         }
 
+        if(data.admin_login_required){
+            setLoginMessage(data.message || "Use the admin sign-in page.", false)
+            setTimeout(function(){
+                window.location.href = "/admin/login.html"
+            }, 1200)
+            return
+        }
+
         const isSuccess = data.success === true || data.message === "Login successful"
         setLoginMessage(data.message || "Login failed.", isSuccess)
 

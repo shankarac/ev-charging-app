@@ -114,6 +114,123 @@ Notes:
 - Optional: in Render → your service → **Environment**, set `OPENCHARGEMAP_API_KEY` if you have one.
 - `PUBLIC_APP_URL` is picked up automatically from Render’s `RENDER_EXTERNAL_URL`.
 
+## Deploy on Azure
+
+Give friends a normal website link using [Azure App Service](https://azure.microsoft.com/products/app-service).
+
+### Prerequisites
+
+- An [Azure subscription](https://azure.microsoft.com/free/)
+- [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) (`az`) on your machine
+- A globally unique app name (for example `ev-charging-app-yourname`)
+
+Install Azure CLI on Windows:
+
+```powershell
+winget install -e --id Microsoft.AzureCLI
+```
+
+Then sign in:
+
+```powershell
+az login
+```
+
+### Option A — PowerShell script (recommended on Windows)
+
+From the repo root:
+
+```powershell
+.\scripts\azure_deploy.ps1 -ResourceGroupName ev-charging-rg -AppName ev-charging-app-yourname
+```
+
+Optional parameters:
+
+```powershell
+.\scripts\azure_deploy.ps1 `
+  -ResourceGroupName ev-charging-rg `
+  -AppName ev-charging-app-yourname `
+  -Location eastus `
+  -DatabaseEngine sqlite
+```
+
+The script creates the resource group (if needed), deploys `infra/azure/main.bicep`, sets the startup command to `bash scripts/azure_start.sh`, and prints the app URL (`https://{appname}.azurewebsites.net`). A random `SESSION_SECRET` is generated securely and passed to Bicep; it is never written to the repo.
+
+Deploy application code after provisioning:
+
+```powershell
+az webapp up --resource-group ev-charging-rg --name ev-charging-app-yourname --runtime "PYTHON:3.12"
+```
+
+Or push to `main` after configuring GitHub Actions (see below).
+
+### Option B — Azure CLI + Bicep manually
+
+```powershell
+az group create --name ev-charging-rg --location eastus
+
+az deployment group create `
+  --resource-group ev-charging-rg `
+  --template-file infra/azure/main.bicep `
+  --parameters appName=ev-charging-app-yourname sessionSecret="YOUR_STRONG_RANDOM_SECRET"
+
+az webapp config set `
+  --resource-group ev-charging-rg `
+  --name ev-charging-app-yourname `
+  --startup-file "bash scripts/azure_start.sh"
+
+az webapp up --resource-group ev-charging-rg --name ev-charging-app-yourname --runtime "PYTHON:3.12"
+```
+
+Replace `YOUR_STRONG_RANDOM_SECRET` with a long random string. Do not commit secrets to git.
+
+### PostgreSQL on Azure (optional)
+
+The default Bicep deployment uses SQLite with persistent storage at `/home/data/ev_app.db`.
+
+To use Azure Database for PostgreSQL Flexible Server:
+
+1. Create a PostgreSQL Flexible Server in the Azure portal (or via `az postgres flexible-server create`).
+2. Redeploy Bicep with postgres parameters:
+
+   ```powershell
+   az deployment group create `
+     --resource-group ev-charging-rg `
+     --template-file infra/azure/main.bicep `
+     --parameters appName=ev-charging-app-yourname databaseEngine=postgres sessionSecret="YOUR_SECRET" postgresDsn="postgresql://USER:PASSWORD@HOST.postgres.database.azure.com:5432/DB?sslmode=require"
+   ```
+
+3. Or set these Application settings in the Azure portal:
+
+   ```text
+   DATABASE_ENGINE=postgres
+   POSTGRES_DSN=postgresql://USER:PASSWORD@HOST.postgres.database.azure.com:5432/DB?sslmode=require
+   DATABASE_URL=<same as POSTGRES_DSN>
+   ```
+
+4. Restart the Web App. PostgreSQL migrations in `migrations/postgres/` apply on startup.
+
+### GitHub Actions continuous deployment
+
+Workflow file: `.github/workflows/azure-webapps-python.yml` (runs on push to `main`).
+
+**OIDC (recommended):** create an App Registration / federated credential for GitHub, then set repository secrets:
+
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+
+Set repository variable `AZURE_APP_NAME` to your Web App name.
+
+**Publish profile alternative:** download the publish profile from the Azure portal and set secret `AZURE_WEBAPP_PUBLISH_PROFILE`.
+
+### Azure notes
+
+- `PUBLIC_APP_URL` is detected automatically from Azure’s `WEBSITE_HOSTNAME` environment variable.
+- User data (SQLite file) persists under `/home/data` on the App Service plan.
+- Startup is handled by `scripts/azure_start.sh` (same pattern as Render’s `scripts/render_start.sh`).
+- Oryx build is enabled via `SCM_DO_BUILD_DURING_DEPLOYMENT=true` (also in `.deployment`).
+
 Google one-click sign-in (no app email/password prompt) can be enabled with:
 
 ```bash

@@ -1,0 +1,55 @@
+name: Deploy to Azure Web App
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Option A (recommended): OIDC federated credentials — set repository secrets:
+      #   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+      # And repository variable: AZURE_APP_NAME
+      - name: Log in to Azure (OIDC)
+        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to Azure Web App (OIDC)
+        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_APP_NAME }}
+          slot-name: production
+
+      # Option B: publish profile — set secret AZURE_WEBAPP_PUBLISH_PROFILE (full XML)
+      - name: Deploy to Azure Web App (publish profile)
+        if: ${{ secrets.AZURE_CLIENT_ID == '' && secrets.AZURE_WEBAPP_PUBLISH_PROFILE != '' }}
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_APP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          slot-name: production
+
+      - name: Skip deploy (no Azure credentials configured)
+        if: ${{ secrets.AZURE_CLIENT_ID == '' && secrets.AZURE_WEBAPP_PUBLISH_PROFILE == '' }}
+        run: |
+          echo "No Azure credentials found."
+          echo "Configure OIDC secrets (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID)"
+          echo "or AZURE_WEBAPP_PUBLISH_PROFILE, plus variable AZURE_APP_NAME."

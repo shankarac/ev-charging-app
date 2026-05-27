@@ -5,3 +5,5 @@ pydantic
 geopy
 streamlit
 psycopg[binary]
+itsdangerous
+python-multipart

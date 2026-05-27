@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pick a Time · EV Charging</title>
+    <link rel="stylesheet" href="/static/style.css?v=43">
+</head>
+<body class="checkout-body pick-slot-body">
+
+<header class="checkout-topbar">
+    <button type="button" class="checkout-back pick-slot-close" id="pick_slot_close_btn">← Close window</button>
+    <div class="checkout-brand">Available charging times</div>
+    <div class="checkout-secure">Pick a slot</div>
+</header>
+
+<main class="checkout-shell pick-slot-shell" id="pick_slot_shell">
+    <section class="checkout-main pick-slot-main">
+        <h1>Choose a charging time</h1>
+        <p class="checkout-lead">Select a date, then tap any available time to open the booking window.</p>
+
+        <article class="checkout-order-card pick-slot-station-card">
+            <div class="checkout-order-icon" aria-hidden="true">⚡</div>
+            <div class="checkout-order-details">
+                <h2 id="pick_slot_station">—</h2>
+                <p id="pick_slot_address" class="checkout-muted">—</p>
+                <p id="pick_slot_distance" class="checkout-muted pick-slot-distance">—</p>
+            </div>
+        </article>
+
+        <section class="checkout-panel pick-slot-panel">
+            <div class="pick-slot-toolbar">
+                <label class="pick-slot-date-label">
+                    <span>Date</span>
+                    <input type="date" id="pick_slot_date" aria-label="Pick date">
+                </label>
+                <p id="pick_slot_date_summary" class="pick-slot-date-summary">Loading times…</p>
+            </div>
+
+            <div class="pick-slot-duration" role="group" aria-label="Booking duration">
+                <span class="pick-slot-duration-label">Duration</span>
+                <label class="pick-slot-duration-option">
+                    <input type="radio" name="slot_duration" value="1" checked>
+                    <span>30 min (1 slot)</span>
+                </label>
+                <label class="pick-slot-duration-option">
+                    <input type="radio" name="slot_duration" value="2">
+                    <span>1 hour (2 slots)</span>
+                </label>
+            </div>
+
+            <div class="slot-picker-legend pick-slot-legend" aria-hidden="true">
+                <span class="legend-available">Available</span>
+                <span class="legend-taken">Taken</span>
+            </div>
+
+            <div id="pick_slot_times" class="pick-slot-grid" role="listbox" aria-label="Available charging times">
+                <p class="station-slot-empty">Loading available times…</p>
+            </div>
+
+            <p id="pick_slot_status" class="message checkout-status"></p>
+        </section>
+    </section>
+
+    <aside class="checkout-summary">
+        <div class="checkout-summary-card">
+            <h2>How it works</h2>
+            <ol class="pick-slot-steps">
+                <li>Pick a date for this station.</li>
+                <li>Choose 30 minutes or 1 hour, then tap an available time.</li>
+                <li>The booking window opens automatically.</li>
+                <li>Confirm your booking and pay in checkout.</li>
+            </ol>
+            <p class="checkout-footnote">This window keeps the station list visible on the dashboard while you browse times.</p>
+        </div>
+    </aside>
+</main>
+
+<div class="checkout-empty" id="pick_slot_empty" hidden>
+    <div class="checkout-empty-card">
+        <h1>No station selected</h1>
+        <p>Click <strong>Pick date &amp; time</strong> on a station card to open this window.</p>
+        <button type="button" class="checkout-place-order" id="pick_slot_empty_close">Close window</button>
+    </div>
+</div>
+
+<script src="/static/booking-format.js?v=1"></script>
+<script src="/static/booking-pricing.js?v=4"></script>
+<script src="/static/pick-slot.js?v=8"></script>
+</body>
+</html>

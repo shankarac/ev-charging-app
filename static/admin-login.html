@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Sign In · EV Operations</title>
+    <link rel="stylesheet" href="/static/style.css?v=48">
+</head>
+<body class="admin-login-body">
+
+<main class="auth-shell admin-auth-shell">
+    <section class="brand-panel admin-brand-panel">
+        <div class="brand-mark admin-brand-mark">OPS</div>
+        <div class="brand-copy-wrap">
+            <p class="eyebrow">EV Charging · Operations</p>
+            <h1>Admin console</h1>
+            <p class="brand-copy">Uses a dedicated admin username and password. Customer emails and passwords from the main app do not work here.</p>
+        </div>
+    </section>
+
+    <section class="form-panel admin-form-panel">
+        <div class="form-card admin-login-card">
+            <p class="admin-login-badge">Administrator</p>
+            <h2>Admin sign in</h2>
+            <p class="form-subtitle">Enter your admin username and password (not your customer login).</p>
+            <p id="admin_login_msg" class="message"></p>
+
+            <form id="admin_login_form" class="login-panel active admin-login-form" novalidate>
+                <label class="admin-field-label" for="admin_login_username">Admin username</label>
+                <input type="text" id="admin_login_username" placeholder="e.g. evadmin" autocomplete="username" autocapitalize="off" spellcheck="false" required>
+                <label class="admin-field-label" for="admin_login_pass">Admin password</label>
+                <input type="password" id="admin_login_pass" placeholder="Admin password" autocomplete="current-password" required>
+                <button type="submit" class="admin-login-submit">Sign in to admin console</button>
+            </form>
+
+            <p class="divider-text">Customer or driver?</p>
+            <a class="secondary-action admin-user-link" href="/login.html">Go to customer login</a>
+            <p class="admin-login-footnote">Admin URL: <strong>/admin/login.html</strong></p>
+        </div>
+    </section>
+</main>
+
+<script src="/static/admin-login.js?v=5"></script>
+</body>
+</html>

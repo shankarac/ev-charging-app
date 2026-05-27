@@ -22,6 +22,22 @@ def load_env_file(path: Path) -> None:
 load_env_file(BASE_DIR / ".env")
 
 
+def _default_public_app_url() -> str:
+    explicit = os.getenv("PUBLIC_APP_URL", "").strip()
+    if explicit:
+        return explicit
+    ngrok_url = os.getenv("NGROK_PUBLIC_URL", "").strip()
+    if ngrok_url:
+        return ngrok_url.rstrip("/")
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "").strip()
+    if render_url:
+        return render_url
+    azure_host = os.getenv("WEBSITE_HOSTNAME", "").strip()
+    if azure_host:
+        return f"https://{azure_host}"
+    return "http://127.0.0.1:8000"
+
+
 class Settings:
     app_name = "EV Charging API"
     cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
@@ -32,10 +48,7 @@ class Settings:
     sqlite_migrations_dir = BASE_DIR / "migrations" / "sqlite"
     postgres_migrations_dir = BASE_DIR / "migrations" / "postgres"
     postgres_dsn = os.getenv("POSTGRES_DSN", os.getenv("DATABASE_URL", ""))
-    public_app_url = os.getenv(
-        "PUBLIC_APP_URL",
-        os.getenv("RENDER_EXTERNAL_URL", "http://127.0.0.1:8000"),
-    )
+    public_app_url = _default_public_app_url()
     session_secret = os.getenv("SESSION_SECRET", "ev-app-session-secret")
     open_charge_map_url = "https://api.openchargemap.io/v3/poi/"
     open_charge_map_api_key = os.getenv("OPENCHARGEMAP_API_KEY", "")
@@ -70,6 +83,10 @@ class Settings:
         for part in os.getenv("ALLOWED_EMAIL_DOMAINS", "").split(",")
         if part.strip()
     ]
+    admin_bootstrap_username = os.getenv("ADMIN_BOOTSTRAP_USERNAME", "")
+    admin_bootstrap_password = os.getenv("ADMIN_BOOTSTRAP_PASSWORD", "")
+    # Legacy: if only email env is set, bootstrap uses username "admin"
+    admin_bootstrap_email = os.getenv("ADMIN_BOOTSTRAP_EMAIL", "")
 
 
 settings = Settings()

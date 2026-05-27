@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book Slot · EV Charging</title>
+    <link rel="stylesheet" href="/static/style.css?v=42">
+</head>
+<body class="checkout-body book-slot-body">
+
+<header class="checkout-topbar">
+    <button type="button" class="checkout-back book-slot-close" id="book_slot_close_btn">← Close window</button>
+    <div class="checkout-brand">EV Charging Booking</div>
+    <div class="checkout-secure">Secure booking</div>
+</header>
+
+<nav class="checkout-steps" aria-label="Booking progress">
+    <span class="checkout-step active">1. Review slot</span>
+    <span class="checkout-step">2. Checkout</span>
+    <span class="checkout-step">3. Confirmation</span>
+</nav>
+
+<main class="checkout-shell book-slot-shell" id="book_slot_shell">
+    <section class="checkout-main">
+        <h1>Confirm your booking</h1>
+        <p class="checkout-lead">Review the station and charging details, then confirm to open checkout in another window.</p>
+
+        <article class="checkout-order-card" id="book_slot_order">
+            <div class="checkout-order-icon" aria-hidden="true">⚡</div>
+            <div class="checkout-order-details">
+                <h2 id="book_slot_station">—</h2>
+                <p id="book_slot_address" class="checkout-muted">—</p>
+            </div>
+        </article>
+
+        <form id="book_slot_form" class="checkout-panel">
+            <h3>Booking details</h3>
+            <div class="checkout-form-grid">
+                <label class="checkout-span-2">
+                    <span>Charging time</span>
+                    <input id="book_slot_time" type="datetime-local" required>
+                </label>
+                <p id="book_slot_duration" class="checkout-muted book-slot-duration checkout-span-2">—</p>
+                <p id="book_slot_rate_line" class="checkout-muted book-slot-rate-line checkout-span-2">—</p>
+                <label>
+                    <span>Charging units</span>
+                    <input id="book_slot_units" type="number" min="1" max="200" value="10" required>
+                    <small class="field-hint">How much to charge (e.g. 10). This is not the same as 1-hour / 2-slot duration.</small>
+                </label>
+                <label>
+                    <span>Charger type</span>
+                    <select id="book_slot_charger">
+                        <option value="Fast DC">Fast DC</option>
+                        <option value="AC Charger">AC Charger</option>
+                        <option value="Ultra Fast">Ultra Fast</option>
+                    </select>
+                </label>
+            </div>
+            <div class="booking-total book-slot-total">
+                <span>Total</span>
+                <strong id="book_slot_total">Rs 0.00</strong>
+            </div>
+            <button type="submit" class="checkout-place-order" id="book_slot_confirm_btn">Confirm booking</button>
+            <p id="book_slot_status" class="message checkout-status"></p>
+        </form>
+    </section>
+
+    <aside class="checkout-summary">
+        <div class="checkout-summary-card">
+            <h2>Summary</h2>
+            <dl class="checkout-lines">
+                <div class="checkout-line">
+                    <dt>Distance</dt>
+                    <dd id="book_slot_distance">—</dd>
+                </div>
+                <div class="checkout-line">
+                    <dt>Charger</dt>
+                    <dd id="book_slot_charger_label">—</dd>
+                </div>
+                <div class="checkout-line checkout-line-total">
+                    <dt>Total</dt>
+                    <dd id="book_slot_total_side">Rs 0.00</dd>
+                </div>
+            </dl>
+            <p class="checkout-footnote">This page opens in its own window so you can keep browsing stations on the dashboard.</p>
+        </div>
+    </aside>
+</main>
+
+<div class="checkout-empty" id="book_slot_empty" hidden>
+    <div class="checkout-empty-card">
+        <h1>No slot selected</h1>
+        <p>Pick a station and time on the dashboard, then click Book Slot again.</p>
+        <button type="button" class="checkout-place-order" id="book_slot_empty_close">Close window</button>
+    </div>
+</div>
+
+<script src="/static/booking-format.js?v=2"></script>
+    <script src="/static/booking-pricing.js?v=4"></script>
+    <script src="/static/book-slot.js?v=9"></script>
+</body>
+</html>

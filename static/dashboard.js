@@ -8,10 +8,12 @@ let pendingBookingRequest = false
 let assistantAwaitingStationPick = false
 let assistantLastSearchLabel = ""
 let assistantBookingDraft = null
+let assistantCostDraft = null
 
 const assistantChargerOptions = ["AC Charger", "Fast DC", "Ultra Fast"]
 
 let username = ""
+let userActiveBookings = []
 let stationSlotLimit = 5
 let maxBookingDate = ""
 let bookingOpenHour = 6
@@ -20,19 +22,106 @@ let selectedBookingSlot = null
 const stationSlotPickerDates = {}
 const stationSlotPickerTimes = {}
 const stationSlotsCache = {}
-const chargerUnitRates = {
-    "AC Charger": 12,
-    "Fast DC": 18,
-    "Ultra Fast": 22
+function getSelectedBookingSlotCount(){
+    const hidden = document.getElementById("booking_slot_count_value")
+    if(hidden){
+        return getBookingSlotCount(hidden.value || 1)
+    }
+    const el = document.querySelector('input[name="booking_slot_count"]:checked')
+    return getBookingSlotCount(el?.value || 1)
 }
 
-function getChargerUnitRate(chargerType){
-    return chargerUnitRates[chargerType] || chargerUnitRates["Fast DC"]
+function setSelectedBookingSlotCount(slotCount){
+    const hidden = document.getElementById("booking_slot_count_value")
+    if(hidden){
+        hidden.value = String(getBookingSlotCount(slotCount))
+    }
+    const value = getBookingSlotCount(slotCount) === 2 ? "2" : "1"
+    const radio = document.querySelector(`input[name="booking_slot_count"][value="${value}"]`)
+    if(radio){
+        radio.checked = true
+    }
 }
 
-function calculateBookingPrice(units, chargerType){
-    const safeUnits = Math.max(0, Number(units) || 0)
-    return safeUnits * getChargerUnitRate(chargerType)
+function getSelectedBookingUnits(){
+    const el = document.getElementById("booking_units")
+    return getBookingUnits(el?.value || DEFAULT_BOOKING_UNITS)
+}
+
+function setBookingStatus(message){
+    const el = document.getElementById("booking_status")
+    if(el){
+        el.innerText = message || ""
+    }
+}
+
+function unitsLookLikeSlotCount(units, slotCount){
+    const unitCount = getBookingUnits(units)
+    const slots = getBookingSlotCount(slotCount)
+    return slots >= 2 && unitCount === slots
+}
+
+function bookingUnitsValidationMessage(){
+    const units = getSelectedBookingUnits()
+    const slotCount = getSelectedBookingSlotCount()
+    if(unitsLookLikeSlotCount(units, slotCount)){
+        return "Enter charging units (e.g. 10) — not the same as time slots (2)."
+    }
+    return ""
+}
+
+function getStationServiceCharge(station){
+    return Math.max(0, Number(station?.service_charge || 0))
+}
+
+function calculateBookingBreakdown(station, units, chargerType, slotCount){
+    return calculateUnitsBreakdown(
+        units,
+        chargerType,
+        getStationServiceCharge(station),
+        slotCount != null ? slotCount : getSelectedBookingSlotCount()
+    )
+}
+
+function findStationByName(stationName){
+    const target = String(stationName || "").trim().toLowerCase()
+    if(!target){
+        return null
+    }
+    return latestStations.find(function(station){
+        return String(station?.station_name || "").trim().toLowerCase() === target
+    }) || null
+}
+
+function getBookingDisplayBreakdown(booking){
+    if(!booking){
+        return { total: 0, subtotal: 0, service_charge: 0, rate_per_unit: 0, units: 0, slot_count: 1 }
+    }
+    const displayUnits = booking.display_units != null
+        ? getBookingUnits(booking.display_units)
+        : normalizeChargingUnits(booking.units, booking.slot_count)
+
+    if(booking.display_price != null && booking.rate_per_unit != null){
+        return {
+            subtotal: Number(booking.subtotal) || 0,
+            service_charge: Number(booking.service_charge) || 0,
+            rate_per_unit: Number(booking.rate_per_unit) || 0,
+            total: Number(booking.display_price) || 0,
+            units: displayUnits,
+            slot_count: getBookingSlotCount(booking.slot_count),
+        }
+    }
+    const station = findStationByName(booking.station_name)
+    return calculateUnitsBreakdown(
+        displayUnits,
+        booking.charger_type || "Fast DC",
+        getStationServiceCharge(station),
+        booking.slot_count
+    )
+}
+
+function getBookingDisplayTotal(booking){
+    return getBookingDisplayBreakdown(booking).total
 }
 
 const cityCoordinates = {
@@ -143,6 +232,41 @@ const ASSISTANT_BOOK_WORDS = [
     "ಬುಕ್", "ಬುಕಿಂಗ್"
 ]
 
+const ASSISTANT_MY_BOOKINGS_TERMS = [
+    "show my booking", "show my bookings", "my bookings", "my booking",
+    "list my bookings", "list bookings", "view my bookings", "view bookings",
+    "show bookings", "see my bookings", "see bookings", "check my bookings",
+    "what are my bookings", "show booking", "show booking history",
+    "என் முன்பதிவு", "என் முன்பதிவுகள்", "என் முன்பதிவுகளை காட்ட", "முன்பதிவுகளை காட்ட",
+    "முன்பதிவுகள் காட்ட", "முன்பதிவுகளை காட்டு", "முன்பதிவு பட்டியல்", "முன்பதிவுகள்",
+    "मेरी बुकिंग", "मेरी बुकिंग्स", "मेरी बुकिंग दिखाए", "मेरी बुकिंग दिखाओ",
+    "बुकिंग दिखाए", "बुकिंग दिखाओ", "बुकिंग दिखाएं", "बुकिंग सूची", "बुकिंग लिस्ट",
+    "എന്റെ ബുക്കിംഗ്", "എന്റെ ബുക്കിംഗുകൾ", "ബുക്കിംഗ് കാണുക", "ബുക്കിംഗുകൾ കാണിക്കുക",
+    "എന്റെ ബുക്കിംഗ് കാണിക്ക്", "ബുക്കിംഗ് പട്ടിക",
+    "నా బుకింగ్స్", "నా బుకింగ్", "బుకింగ్స్ చూపు", "బుకింగ్స్ చూపించు", "నా బుకింగ్స్ చూపించు",
+    "ನನ್ನ ಬುಕಿಂಗ್", "ನನ್ನ ಬುಕಿಂಗ್‌ಗಳು", "ಬುಕಿಂಗ್ ತೋರಿಸಿ", "ನನ್ನ ಬುಕಿಂಗ್ ತೋರಿಸಿ", "ಬುಕಿಂಗ್ ಪಟ್ಟಿ",
+    "मम आरक्षण", "मम आरक्षणानि", "आरक्षणानि दर्शय", "मम आरक्षणानि दर्शय", "आरक्षणानि पश्य", "आरक्षणसूची"
+]
+
+const ASSISTANT_MY_BOOKINGS_POSSESSIVE = [
+    "my", "mine",
+    "என்", "என்னுடைய",
+    "मेरी", "मेरे", "मेरा", "मम",
+    "എന്റെ",
+    "నా",
+    "ನನ್ನ"
+]
+
+const ASSISTANT_MY_BOOKINGS_NOUNS = [
+    "booking", "bookings", "reservation", "reservations",
+    "முன்பதிவு", "முன்பதிவுகள்",
+    "बुकिंग", "बुकिंग्स",
+    "ബുക്കിംഗ്", "ബുക്കിംഗുകൾ",
+    "బుకింగ్", "బుకింగ్స్",
+    "ಬುಕಿಂಗ್", "ಬುಕಿಂಗ್‌ಗಳು",
+    "आरक्षण", "आरक्षणानि", "आरक्षणम्"
+]
+
 const SUPPORTED_LANGUAGES = [
     { id: "english", label: "English", nativeLabel: "English" },
     { id: "tamil", label: "Tamil", nativeLabel: "தமிழ்" },
@@ -161,43 +285,74 @@ const translations = {
         locationChoiceTitle: "Location access is optional", locationChoiceText: "Enable location to load realtime stations near you. Without location, search by city or pincode below.", showNearest: "Show nearest stations", clearResults: "Clear results", searchStationsHint: "Search Coimbatore or pincode 678001 above, or tap Show nearest stations.",
         searchPromptEmpty: "Search a city or pincode to load EV charging stations.",
         stationsFound: "EV charging stations found", slotLimit: "slot limit per station", activeBookings: "active bookings", seeMore: "See 5 More EV Charging Stations",
-        selectedStationLabel: "Selected station", chooseStation: "Choose a station", chooseStationHelp: "Tap Book Slot on a station, set date and time in the panel, then confirm booking.",
-        bookingTime: "Booking time", chargingUnits: "Charging units", chargerType: "Charger type", estimatedTotal: "Estimated total", confirmBooking: "Confirm Booking",
+        selectedStationLabel: "Selected station", chooseStation: "Choose a station", chooseStationHelp: "1. Pick date & time on a station · 2. Tap Book Slot · 3. Confirm in the panel on the right.",
+        bookingTime: "Booking time", chargingUnits: "Charging units", chargingDuration: "Slot duration", duration30: "30 min (1 slot)", duration60: "1 hour (2 slots)", unitsLabel: "units", chargerType: "Charger type", estimatedTotal: "Estimated total", confirmBooking: "Confirm Booking",
         myBookings: "My Bookings", myBookingsHelp: "Review active bookings and past booking history.", showBookings: "Refresh Bookings",
-        payments: "Payments", paymentsHelp: "Preview the expected charging cost before payment.", estimatedCharge: "Estimated charge", paymentHint: "Select a station and units to generate a booking estimate.",
-        assistantTitle: "EV Assistant", assistantHelp: "Chat in your language to find stations, book, check bookings, or estimate cost.", languagesSupportedHint: "Supported languages: English, Tamil, Hindi, Telugu, Kannada, Malayalam, Sanskrit.", chatLanguageLabel: "Language", promptBook: "Book a station", promptStations: "Show available stations", promptStationsQuery: "Show stations in Coimbatore", promptBookings: "Show bookings", promptCost: "Estimate cost", chatPlaceholder: "Type in your language, e.g. Show stations in Coimbatore", send: "Send",
+        payments: "Payments", paymentsHelp: "Preview the expected charging cost before payment.", estimatedCharge: "Estimated charge", paymentHint: "Select a station, units, and charger type to generate a booking estimate.",
+        assistantTitle: "EV Assistant", assistantHelp: "Chat in your language to find stations, book, check bookings, or estimate cost.", languagesSupportedHint: "Supported languages: English, Tamil, Hindi, Telugu, Kannada, Malayalam, Sanskrit.", chatLanguageLabel: "Language", promptBook: "Book a station", promptStations: "Show available stations", promptStationsQuery: "Show stations in Coimbatore", promptBookings: "Show my bookings", promptCost: "Estimate cost", chatPlaceholder: "Type in your language, e.g. Show stations in Coimbatore", send: "Send",
         slotsBadgeAvailable: "{available}/{total} today",
         slotsBadgeFull: "No slots today",
         pickDate: "Date",
         pickTime: "Time",
         pickTimeSlot: "Pick time",
+        pickDateAndTime: "Pick date & time",
+        tapToChangeTime: "Tap to change time",
         slotsFree: "{count} free",
-        bookAtYourTime: "Book at your convenience (any date & time below, or tap a suggested slot).",
+        slotsAvailableOnDate: "{count} times free · {date}",
+        noSlotsOnDate: "No times available · {date}",
+        bookAtYourTime: "Pick a date and time on the station card, or set your preferred time below.",
         suggestedSlots: "Suggested times",
         availableSlots: "Available",
         availableSlotsBtn: "Available slots",
-        dateSlotsBtn: "Date & available slots",
-        slotBooked: "Booked",
+        dateSlotsBtn: "Pick date & time",
+        openSlotPickerWindowHint: "Opens available times in a new window.",
+        slotPickerTitle: "Choose a charging time",
+        slotPickerHint: "Select a date, then tap an available time.",
+        slotLegendAvailable: "Available",
+        slotLegendTaken: "Taken",
+        slotBooked: "Taken",
         slotPast: "Past",
-        slotLoading: "Loading slots…",
-        selectSlotFirst: "Choose when you want to charge, then confirm booking.",
-        noSlotsForDate: "No suggested times for this date.",
+        slotLoading: "Loading available times…",
+        slotAlreadyBooked: "That time is already booked. Please pick another.",
+        stationAlreadyBookedByYou: "You already have an active booking at this station. Cancel it before booking again.",
+        alreadyBooked: "Already booked",
+        selectSlotFirst: "Pick a date and time on the station first.",
+        openBookSlotHint: "Open booking to confirm units and pay.",
+        assistantBookingReadyBookSlot: "Ready: {summary}. Tap Book Slot to confirm and pay.",
+        assistantBookSlotHint: "Reply in chat with units, charger type, slot length (30 min or 1 hour), then date & time.",
+        assistantMissingUnits: "First, how many charging units? (e.g. 10)",
+        assistantMissingCharger: "Next, which charger type?",
+        assistantMissingSlotDuration: "Next, how long do you need the charger — 30 minutes or 1 hour?",
+        assistantMissingTime: "Lastly, when would you like to charge?",
+        askBookingSlotDuration: "How long do you need the charger at {station}?",
+        slotDurationOptionLine: "{index}. {label}",
+        invalidBookingSlotDuration: "Reply 1 for 30 minutes, 2 for 1 hour — or say \"30 min\" or \"1 hour\".",
+        askCostUnits: "How many charging units should I estimate for? (e.g. 10)",
+        openSlotPickerFirst: "Choose a charging time first — opening the time picker for you.",
+        confirmBookingHint: "Time selected — review the details and tap Confirm Booking.",
+        noSlotsForDate: "No times available for this date. Try another date.",
         bookingTimeOutOfHours: "Choose a time between {open}:00 and {close}:00.",
         bookingTimeMustBeFuture: "Booking time must be in the future.",
-        assistantConfirmHint: "Complete units, charger type, and your preferred date & time in the chat first.",
+        assistantConfirmHint: "Complete units, charger type, slot length (30 min or 1 hour), and date & time in the chat first.",
         assistantBookingReady: "Ready to book: {summary}",
         stationFull: "{station} has no free slots on the selected date.",
-        stationSelected: "Selected {station} ({distance}). Set date and time in the booking panel, then confirm.", stationRangeInvalid: "Please choose a station between 1 and {max}.", stationListNear: " near {area}", stationListMore: "\n\nShowing {shown} of {total}. Name another city or pincode to search again.", stationListItem: "{index}. {name} — {distance}\n   {address}", activeBookingsLabel: "Active:", pastBookingsLabel: "Past:", pastBookingsMore: "...and {count} more past booking(s).", bookingsLoadFailed: "I could not load your bookings right now. Please try again in a moment.", languageChanged: "Conversation language set to {language}. You can type in that language.", chargerOptionLine: "{index}. {type} (Rs {rate}/unit)", paymentPending: "Payment Pending", paymentPaid: "Paid",
+        stationSelected: "Selected {station} ({distance}). Tap Book Slot on the station card to continue.", stationRangeInvalid: "Please choose a station between 1 and {max}.", stationListNear: " near {area}", stationListMore: "\n\nShowing {shown} of {total}. Name another city or pincode to search again.", stationListItem: "{index}. {name} — {distance}\n   {address}", activeBookingsLabel: "Active:", pastBookingsLabel: "Past:", pastBookingsMore: "...and {count} more past booking(s).", bookingsLoadFailed: "I could not load your bookings right now. Please try again in a moment.", languageChanged: "Conversation language set to {language}. You can type in that language.", chargerOptionLine: "{index}. {type} (Rs {rate}/unit)", paymentPending: "Payment Pending", paymentPaid: "Paid",
         welcome: "Hi! Chat in English, Tamil, Hindi, Telugu, Kannada, Malayalam, or Sanskrit. I can find EV stations, book slots, and estimate cost. Try: \"Show stations in Coimbatore\".",
-        assistantHelpText: "I can help you with:\n• Available stations — \"Show stations in Hyderabad\" or \"Stations near pincode 678001\"\n• Booking — \"Book 1\" then units, charger type, then any date & time you prefer\n• Your bookings — \"Show my bookings\"\n• Cost — \"Estimate cost for 10 units\"",
-        pickStation: "Which station should I book? Reply with 1–5 or the station name. I will ask units, charger type, then any date and time you prefer.",
-        askBookingUnits: "How many charging units for {station}? (e.g. 10)",
-        askBookingCharger: "Which charger type?",
+        assistantHelpText: "I can help you with:\n• Available stations — \"Show stations in Hyderabad\" or \"Stations near pincode 678001\"\n• Booking — \"Book 1\" then units (e.g. 10), charger type, 30 min or 1 hour, then date & time\n• Your bookings — \"Show my bookings\"\n• Cost — \"Estimate cost\" then units, charger, and slot length",
+        pickStation: "Which station should I book? Reply with 1–5 or the station name. I will ask charging units, charger type, 30 min or 1 hour, then date and time.",
+        askBookingUnits: "How many charging units for {station}? (e.g. 10 — this is energy units, not 30 min / 1 hour slots)",
+        askBookingDuration: "How many charging units for {station}? (e.g. 10)",
+        askBookingCharger: "Which charger type for {station}? Reply with 1, 2, or 3, or the name below:",
         askBookingDateTime: "When would you like to charge? Say any time that suits you (e.g. 22nd at 2:30, tomorrow 10:00, 25/05/2026 15:30). Hours: {open}:00–{close}:00.",
         bookingSuccess: "Booked successfully! {station} on {time}. Total: {price}.",
-        redirectingToPayment: "Taking you to payment now…",
+        redirectingToPayment: "Opening checkout in a new window…",
+        bookingWindowTitle: "Confirm your booking",
+        bookingWindowEyebrow: "New booking",
+        bookingWindowLead: "Review your slot details, then confirm to open checkout in a new window.",
+        cancelBookingWindow: "Cancel",
         paymentSuccess: "Payment successful!",
         invalidBookingUnits: "Please enter units between 1 and 200 (for example: 10).",
+        invalidBookingDuration: "Please enter units between 1 and 200 (for example: 10).",
         invalidBookingCharger: "Reply with 1, 2, or 3 — or say AC Charger, Fast DC, or Ultra Fast.",
         invalidBookingDateTime: "Please enter a valid future date and time (e.g. 22nd at 2:30, 25/05/2026 15:45, or tomorrow 9:30 AM).",
         stationListIntro: "Here are the available EV charging stations",
@@ -205,8 +360,13 @@ const translations = {
         bookedConfirm: "Booked successfully! {station} on {time}. Total: {price}. Taking you to payment now…",
         bookingFailedAssistant: "I could not complete that booking: {reason}",
         profile: "Profile", profileHelp: "Your current signed-in session.", usernameLabel: "Username", logout: "Logout",
-        book: "Book Slot", cancel: "Cancel Booking", noBookings: "No active bookings yet.", loading: "Loading realtime stations...", stationsLoadFailed: "Could not load stations. Ensure the app server is running, then refresh or search by city.", noStations: "No realtime stations available.", selectedRequired: "Select a station before confirming.", saving: "Saving booking...", bookingFailed: "Unable to save booking.",
-        askLocation: "Which city or pincode should I search? For example: Coimbatore or 678001.", noStationsLocation: "I could not find realtime stations near {city}. Try another city or pincode.", bookedStation: "Booked {station} in {city}. Booking time: {time}. Estimated amount: {price}.", bookingListIntro: "Here are your bookings:", noActiveBooking: "You do not have an active booking yet.", costEstimate: "Current estimate is {price} at Rs {rate} per charging unit.", cancelHelp: "Say \"show my bookings\" to see reservations. To cancel one, open Bookings from the menu and use Cancel Booking.", greeting: "Hello! Ask me about available stations, booking, or your active reservations.", fallback: "I can show available stations, book a charger, list your bookings, or estimate cost. Try \"Show stations in Coimbatore\" or \"Book station 1\".", nearestShown: "Showing realtime stations from the default service area. Use See More to browse more.", detectingLocation: "Detecting your location...", locationFound: "Location found. Showing realtime stations.", locationDenied: "Location permission was not enabled. Showing realtime stations from the default service area.", noMoreStations: "Searching a wider realtime area. If none appear, no more stations are available nearby."
+        estTotal: "Est. total",
+        pricePerUnit: "Rs {rate}/unit",
+        priceUnitsLine: "{units} units · {type}",
+        perUnitShort: "/unit",
+        book: "Book Slot", cancel: "Cancel Booking",
+        noBookings: "No active bookings yet.", loading: "Loading realtime stations...", stationsLoadFailed: "Could not load stations. Ensure the app server is running, then refresh or search by city.", noStations: "No realtime stations available.", selectedRequired: "Select a station before confirming.", saving: "Saving booking...", bookingFailed: "Unable to save booking.",
+        askLocation: "Which city or pincode should I search? For example: Coimbatore or 678001.", noStationsLocation: "I could not find realtime stations near {city}. Try another city or pincode.", bookedStation: "Booked {station} in {city}. Booking time: {time}. Estimated amount: {price}.", bookingListIntro: "Here are your bookings:", noActiveBooking: "You do not have an active booking yet.", costEstimate: "Current estimate is {price} ({units} units at Rs {rate}/unit).", cancelHelp: "Say \"show my bookings\" to see reservations. To cancel one, open Bookings from the menu and use Cancel Booking.", greeting: "Hello! Ask me about available stations, booking, or your active reservations.", fallback: "I can show available stations, book a charger, list your bookings, or estimate cost. Try \"Show stations in Coimbatore\" or \"Book station 1\".", nearestShown: "Showing realtime stations from the default service area. Use See More to browse more.", detectingLocation: "Detecting your location...", locationFound: "Location found. Showing realtime stations.", locationDenied: "Location permission was not enabled. Showing realtime stations from the default service area.", noMoreStations: "Searching a wider realtime area. If none appear, no more stations are available nearby."
     },
     tamil: {
         portal: "செயல்பாட்டு தளம்", navStations: "நிலையங்கள்", navBookings: "முன்பதிவுகள்", navPayments: "கட்டணம்", navAssistant: "உதவியாளர்", navProfile: "சுயவிவரம்",
@@ -218,7 +378,8 @@ const translations = {
         bookingTime: "முன்பதிவு நேரம்", chargingUnits: "சார்ஜிங் யூனிட்கள்", chargerType: "சார்ஜர் வகை", estimatedTotal: "மதிப்பீடு", confirmBooking: "முன்பதிவு உறுதி",
         myBookings: "என் முன்பதிவுகள்", myBookingsHelp: "செயலில் உள்ள முன்பதிவுகளையும் பழைய முன்பதிவு வரலாறையும் பார்க்கவும்.", showBookings: "முன்பதிவுகளை புதுப்பி",
         payments: "கட்டணங்கள்", paymentsHelp: "கட்டண மதிப்பீட்டை பார்க்கவும்.", estimatedCharge: "மதிப்பிடப்பட்ட கட்டணம்", paymentHint: "நிலையம் மற்றும் யூனிட்கள் தேர்வு செய்யவும்.",
-        assistantTitle: "EV உதவியாளர்", assistantHelp: "முன்பதிவு, நிலைய தேடல், கட்டணம், ரத்து பற்றி கேளுங்கள்.", promptBook: "நிலையம் பதிவு", promptBookings: "முன்பதிவுகள்", promptCost: "செலவு மதிப்பீடு", chatPlaceholder: "EV உதவியாளரிடம் கேளுங்கள்...", send: "அனுப்பு",
+        assistantTitle: "EV உதவியாளர்", assistantHelp: "முன்பதிவு, நிலைய தேடல், கட்டணம், ரத்து பற்றி கேளுங்கள்.", promptBook: "நிலையம் பதிவு", promptBookings: "என் முன்பதிவுகள்", promptCost: "செலவு மதிப்பீடு", chatPlaceholder: "EV உதவியாளரிடம் கேளுங்கள்...", send: "அனுப்பு",
+        bookingListIntro: "உங்கள் முன்பதிவுகள்:", noActiveBooking: "செயலில் முன்பதிவு இல்லை.", activeBookingsLabel: "செயலில்:", pastBookingsLabel: "முடிந்தவை:", pastBookingsMore: "...மேலும் {count} பழைய முன்பதிவுகள்.", bookingsLoadFailed: "முன்பதிவுகளை இப்போது ஏற்ற முடியவில்லை. மீண்டும் முயற்சிக்கவும்.", paymentPending: "பணம் நிலுவையில்", paymentPaid: "செலுத்தப்பட்டது",
         profile: "சுயவிவரம்", profileHelp: "உங்கள் தற்போதைய அமர்வு.", usernameLabel: "பயனர் பெயர்", logout: "வெளியேறு",
         book: "ஸ்லாட் பதிவு", cancel: "ரத்து செய்", noBookings: "செயலில் முன்பதிவுகள் இல்லை.", loading: "ஏற்றுகிறது...", noStations: "நிலையங்கள் இல்லை.", selectedRequired: "முதலில் நிலையத்தைத் தேர்வு செய்யவும்.", saving: "சேமிக்கிறது...", bookingFailed: "முன்பதிவை சேமிக்க முடியவில்லை.",
         askLocation: "EV சார்ஜிங் நிலையம் பதிவு செய்ய வேண்டிய நகரம் அல்லது இடத்தை சொல்லுங்கள்.", noStationsLocation: "{city} இல் நிலையங்கள் இல்லை.", bookedStation: "{city} இல் {station} பதிவு செய்யப்பட்டது. நேரம்: {time}. தொகை: {price}.", bookingCount: "{count} செயலில் முன்பதிவுகள் உள்ளன. Bookings புதுப்பிக்கப்பட்டது.", noActiveBooking: "செயலில் முன்பதிவு இல்லை.", costEstimate: "மதிப்பீடு {price}, ஒரு யூனிட்டுக்கு Rs {rate}.", cancelHelp: "Bookings திறந்து Cancel Booking பயன்படுத்தவும்.", greeting: "வணக்கம். நிலையம் தேட, பதிவு செய்ய, செலவு கணக்கிட உதவுகிறேன்.", welcome: "வரவேற்கிறேன். EV நிலையம் பதிவு செய்ய நகரத்தை சொல்லுங்கள்.", fallback: "நிலைய தேடல், பதிவு, ரத்து, செலவு மதிப்பீட்டில் உதவ முடியும்.", nearestShown: "அருகிலுள்ள நிலையங்கள் காட்டப்படுகின்றன. மேலும் பார்க்க See More பயன்படுத்தவும்.", detectingLocation: "உங்கள் இடம் கண்டறியப்படுகிறது...", locationFound: "இடம் கிடைத்தது. அருகிலுள்ள நிலையங்கள் காட்டப்படுகின்றன.", locationDenied: "இட அனுமதி இயங்கவில்லை. அருகிலுள்ள நிலையங்கள் காட்டப்படுகின்றன."
@@ -233,7 +394,8 @@ const translations = {
         bookingTime: "बुकिंग समय", chargingUnits: "चार्जिंग यूनिट", chargerType: "चार्जर प्रकार", estimatedTotal: "अनुमानित कुल", confirmBooking: "बुकिंग पुष्टि",
         myBookings: "मेरी बुकिंग", myBookingsHelp: "सक्रिय बुकिंग और पुराना इतिहास देखें.", showBookings: "बुकिंग रीफ्रेश करें",
         payments: "भुगतान", paymentsHelp: "भुगतान से पहले लागत देखें.", estimatedCharge: "अनुमानित शुल्क", paymentHint: "स्टेशन और यूनिट चुनें.",
-        assistantTitle: "EV सहायक", assistantHelp: "बुकिंग, स्टेशन, लागत या रद्दीकरण पूछें.", promptBook: "स्टेशन बुक करें", promptBookings: "बुकिंग दिखाएं", promptCost: "लागत अनुमान", chatPlaceholder: "EV सहायक से पूछें...", send: "भेजें",
+        assistantTitle: "EV सहायक", assistantHelp: "बुकिंग, स्टेशन, लागत या रद्दीकरण पूछें.", promptBook: "स्टेशन बुक करें", promptBookings: "मेरी बुकिंग दिखाएं", promptCost: "लागत अनुमान", chatPlaceholder: "EV सहायक से पूछें...", send: "भेजें",
+        bookingListIntro: "आपकी बुकिंग:", noActiveBooking: "आपकी कोई सक्रिय बुकिंग नहीं है.", activeBookingsLabel: "सक्रिय:", pastBookingsLabel: "पिछली:", pastBookingsMore: "...और {count} पिछली बुकिंग।", bookingsLoadFailed: "बुकिंग अभी लोड नहीं हो सकीं। फिर कोशिश करें।", paymentPending: "भुगतान लंबित", paymentPaid: "भुगतान हो गया",
         profile: "प्रोफाइल", profileHelp: "आपका वर्तमान सत्र.", usernameLabel: "यूजरनेम", logout: "लॉगआउट",
         book: "स्लॉट बुक करें", cancel: "बुकिंग रद्द करें", noBookings: "कोई सक्रिय बुकिंग नहीं.", loading: "लोड हो रहा है...", noStations: "कोई स्टेशन उपलब्ध नहीं.", selectedRequired: "पहले स्टेशन चुनें.", saving: "बुकिंग सेव हो रही है...", bookingFailed: "बुकिंग सेव नहीं हो सकी.",
         askLocation: "कृपया EV चार्जिंग स्टेशन बुक करने का शहर या स्थान बताएं.", noStationsLocation: "{city} में कोई स्टेशन उपलब्ध नहीं है.", bookedStation: "{city} में {station} बुक हो गया. समय: {time}. राशि: {price}.", bookingCount: "{count} सक्रिय बुकिंग हैं. Bookings पैनल रीफ्रेश हुआ.", noActiveBooking: "आपकी कोई सक्रिय बुकिंग नहीं है.", costEstimate: "अनुमान {price}, Rs {rate} प्रति यूनिट.", cancelHelp: "Bookings खोलें और Cancel Booking इस्तेमाल करें.", greeting: "नमस्ते. मैं स्टेशन खोज, बुकिंग और लागत अनुमान में मदद कर सकता हूं.", welcome: "स्वागत है. EV स्टेशन बुक करने के लिए शहर बताएं.", fallback: "मैं स्टेशन खोज, बुकिंग, रद्दीकरण और लागत अनुमान में मदद कर सकता हूं.", nearestShown: "नजदीकी स्टेशन दिखाए जा रहे हैं. और विकल्पों के लिए See More दबाएं."
@@ -248,7 +410,8 @@ const translations = {
         bookingTime: "ബുക്കിംഗ് സമയം", chargingUnits: "ചാർജിംഗ് യൂണിറ്റുകൾ", chargerType: "ചാർജർ തരം", estimatedTotal: "കണക്കാക്കിയ തുക", confirmBooking: "ബുക്കിംഗ് സ്ഥിരീകരിക്കുക",
         myBookings: "എന്റെ ബുക്കിംഗ്", myBookingsHelp: "സജീവ ബുക്കിംഗുകളും പഴയ ബുക്കിംഗ് ചരിത്രവും കാണുക.", showBookings: "ബുക്കിംഗ് പുതുക്കുക",
         payments: "പേയ്മെന്റ്", paymentsHelp: "ചെലവ് മുൻകൂട്ടി കാണുക.", estimatedCharge: "കണക്കാക്കിയ ചാർജ്", paymentHint: "സ്റ്റേഷൻയും യൂണിറ്റും തിരഞ്ഞെടുക്കുക.",
-        assistantTitle: "EV സഹായി", assistantHelp: "ബുക്കിംഗ്, സ്റ്റേഷൻ, ചെലവ്, റദ്ദാക്കൽ ചോദിക്കുക.", promptBook: "സ്റ്റേഷൻ ബുക്ക്", promptBookings: "ബുക്കിംഗ് കാണുക", promptCost: "ചെലവ് കണക്ക്", chatPlaceholder: "EV സഹായിയോട് ചോദിക്കുക...", send: "അയക്കുക",
+        assistantTitle: "EV സഹായി", assistantHelp: "ബുക്കിംഗ്, സ്റ്റേഷൻ, ചെലവ്, റദ്ദാക്കൽ ചോദിക്കുക.", promptBook: "സ്റ്റേഷൻ ബുക്ക്", promptBookings: "എന്റെ ബുക്കിംഗ് കാണുക", promptCost: "ചെലവ് കണക്ക്", chatPlaceholder: "EV സഹായിയോട് ചോദിക്കുക...", send: "അയക്കുക",
+        bookingListIntro: "നിങ്ങളുടെ ബുക്കിംഗുകൾ:", noActiveBooking: "സജീവ ബുക്കിംഗ് ഇല്ല.", activeBookingsLabel: "സജീവം:", pastBookingsLabel: "കഴിഞ്ഞത്:", pastBookingsMore: "...കൂടെ {count} പഴയ ബുക്കിംഗ്.", bookingsLoadFailed: "ബുക്കിംഗ് ലോഡ് ചെയ്യാനായില്ല. വീണ്ടും ശ്രമിക്കുക.", paymentPending: "പേയ്മെന്റ് ബാക്കി", paymentPaid: "പണം നൽകി",
         profile: "പ്രൊഫൈൽ", profileHelp: "നിലവിലെ സെഷൻ.", usernameLabel: "ഉപയോക്തൃനാമം", logout: "ലോഗൗട്ട്",
         book: "സ്ലോട്ട് ബുക്ക്", cancel: "ബുക്കിംഗ് റദ്ദാക്കുക", noBookings: "സജീവ ബുക്കിംഗ് ഇല്ല.", loading: "ലോഡ് ചെയ്യുന്നു...", noStations: "സ്റ്റേഷനുകൾ ലഭ്യമല്ല.", selectedRequired: "ആദ്യം സ്റ്റേഷൻ തിരഞ്ഞെടുക്കുക.", saving: "ബുക്കിംഗ് സംരക്ഷിക്കുന്നു...", bookingFailed: "ബുക്കിംഗ് സംരക്ഷിക്കാൻ കഴിഞ്ഞില്ല.",
         askLocation: "EV ചാർജിംഗ് സ്റ്റേഷൻ ബുക്ക് ചെയ്യേണ്ട നഗരം അല്ലെങ്കിൽ സ്ഥലം പറയുക.", noStationsLocation: "{city} ൽ സ്റ്റേഷനുകൾ ലഭ്യമല്ല.", bookedStation: "{city} ൽ {station} ബുക്ക് ചെയ്തു. സമയം: {time}. തുക: {price}.", bookingCount: "{count} സജീവ ബുക്കിംഗ് ഉണ്ട്. Bookings പുതുക്കി.", noActiveBooking: "സജീവ ബുക്കിംഗ് ഇല്ല.", costEstimate: "കണക്ക് {price}, യൂണിറ്റിന് Rs {rate}.", cancelHelp: "Bookings തുറന്ന് Cancel Booking ഉപയോഗിക്കുക.", greeting: "നമസ്കാരം. സ്റ്റേഷൻ കണ്ടെത്താനും ബുക്ക് ചെയ്യാനും സഹായിക്കാം.", welcome: "സ്വാഗതം. EV സ്റ്റേഷൻ ബുക്ക് ചെയ്യാൻ നഗരം പറയുക.", fallback: "സ്റ്റേഷൻ തിരയൽ, ബുക്കിംഗ്, റദ്ദാക്കൽ, ചെലവ് കണക്കിൽ സഹായിക്കാം.", nearestShown: "അടുത്തുള്ള സ്റ്റേഷനുകൾ കാണിക്കുന്നു. കൂടുതൽ കാണാൻ See More ഉപയോഗിക്കുക."
@@ -263,7 +426,8 @@ const translations = {
         bookingTime: "బుకింగ్ సమయం", chargingUnits: "చార్జింగ్ యూనిట్లు", chargerType: "చార్జర్ రకం", estimatedTotal: "అంచనా మొత్తం", confirmBooking: "బుకింగ్ నిర్ధారించు",
         myBookings: "నా బుకింగ్స్", myBookingsHelp: "సక్రియ బుకింగ్స్ మరియు పాత బుకింగ్ చరిత్రను చూడండి.", showBookings: "బుకింగ్స్ రిఫ్రెష్",
         payments: "చెల్లింపులు", paymentsHelp: "చెల్లింపుకు ముందు ఖర్చు చూడండి.", estimatedCharge: "అంచనా చార్జ్", paymentHint: "స్టేషన్ మరియు యూనిట్లు ఎంచుకోండి.",
-        assistantTitle: "EV సహాయకుడు", assistantHelp: "బుకింగ్, స్టేషన్, ఖర్చు, రద్దు గురించి అడగండి.", promptBook: "స్టేషన్ బుక్", promptBookings: "బుకింగ్స్ చూపు", promptCost: "ఖర్చు అంచనా", chatPlaceholder: "EV సహాయకుడిని అడగండి...", send: "పంపు",
+        assistantTitle: "EV సహాయకుడు", assistantHelp: "బుకింగ్, స్టేషన్, ఖర్చు, రద్దు గురించి అడగండి.", promptBook: "స్టేషన్ బుక్", promptBookings: "నా బుకింగ్స్ చూపు", promptCost: "ఖర్చు అంచనా", chatPlaceholder: "EV సహాయకుడిని అడగండి...", send: "పంపు",
+        bookingListIntro: "మీ బుకింగ్స్:", noActiveBooking: "సక్రియ బుకింగ్ లేదు.", activeBookingsLabel: "సక్రియం:", pastBookingsLabel: "గతం:", pastBookingsMore: "...మరో {count} పాత బుకింగ్స్.", bookingsLoadFailed: "బుకింగ్స్ లోడ్ కాలేదు. మళ్లీ ప్రయత్నించండి.", paymentPending: "చెల్లింపు పెండింగ్", paymentPaid: "చెల్లించబడింది",
         profile: "ప్రొఫైల్", profileHelp: "ప్రస్తుత సెషన్.", usernameLabel: "వినియోగదారు పేరు", logout: "లాగౌట్",
         book: "స్లాట్ బుక్", cancel: "బుకింగ్ రద్దు", noBookings: "సక్రియ బుకింగ్ లేదు.", loading: "లోడ్ అవుతోంది...", noStations: "స్టేషన్లు అందుబాటులో లేవు.", selectedRequired: "ముందుగా స్టేషన్ ఎంచుకోండి.", saving: "బుకింగ్ సేవ్ అవుతోంది...", bookingFailed: "బుకింగ్ సేవ్ కాలేదు.",
         askLocation: "EV చార్జింగ్ స్టేషన్ బుక్ చేయాల్సిన నగరం లేదా ప్రదేశం చెప్పండి.", noStationsLocation: "{city} లో స్టేషన్లు అందుబాటులో లేవు.", bookedStation: "{city} లో {station} బుక్ అయింది. సమయం: {time}. మొత్తం: {price}.", bookingCount: "{count} సక్రియ బుకింగ్స్ ఉన్నాయి. Bookings రిఫ్రెష్ చేశాను.", noActiveBooking: "సక్రియ బుకింగ్ లేదు.", costEstimate: "అంచనా {price}, యూనిట్‌కు Rs {rate}.", cancelHelp: "Bookings తెరిచి Cancel Booking ఉపయోగించండి.", greeting: "నమస్తే. స్టేషన్ కనుగొనడం, బుకింగ్, ఖర్చు అంచనాలో సహాయం చేస్తాను.", welcome: "స్వాగతం. EV స్టేషన్ బుక్ చేయడానికి నగరం చెప్పండి.", fallback: "స్టేషన్ శోధన, బుకింగ్, రద్దు, ఖర్చు అంచనాలో సహాయం చేస్తాను.", nearestShown: "దగ్గర్లోని స్టేషన్లు చూపిస్తున్నాం. మరిన్ని చూడటానికి See More ఉపయోగించండి."
@@ -278,7 +442,8 @@ const translations = {
         bookingTime: "आरक्षण समयः", chargingUnits: "चार्जिंग यूनिट्", chargerType: "चार्जर प्रकारः", estimatedTotal: "अनुमित मूल्यम्", confirmBooking: "आरक्षणं निश्चितम्",
         myBookings: "मम आरक्षणानि", myBookingsHelp: "सक्रिय आरक्षणानि पुरातन-इतिहासं च पश्यतु.", showBookings: "आरक्षणानि नवीकरोतु",
         payments: "भुक्तयः", paymentsHelp: "मूल्यं पूर्वं पश्यतु.", estimatedCharge: "अनुमित शुल्कम्", paymentHint: "स्थानकं यूनिट् च चिनोतु.",
-        assistantTitle: "EV सहायकः", assistantHelp: "आरक्षणं, स्थानकं, मूल्यं, निरसनं पृच्छतु.", promptBook: "स्थानकं आरक्षतु", promptBookings: "आरक्षणानि दर्शय", promptCost: "मूल्यं गणय", chatPlaceholder: "EV सहायकं पृच्छतु...", send: "प्रेषय",
+        assistantTitle: "EV सहायकः", assistantHelp: "आरक्षणं, स्थानकं, मूल्यं, निरसनं पृच्छतु.", promptBook: "स्थानकं आरक्षतु", promptBookings: "मम आरक्षणानि दर्शय", promptCost: "मूल्यं गणय", chatPlaceholder: "EV सहायकं पृच्छतु...", send: "प्रेषय",
+        bookingListIntro: "भवतः आरक्षणानि:", noActiveBooking: "सक्रियम् आरक्षणं नास्ति.", activeBookingsLabel: "सक्रियम्:", pastBookingsLabel: "पुरातनम्:", pastBookingsMore: "...अधिकानि {count} पुरातन-आरक्षणानि.", bookingsLoadFailed: "आरक्षणानि अधुना लोड् न शक्यन्ते.", paymentPending: "भुक्तिः प्रलम्बिता", paymentPaid: "भुक्तिः जाता",
         profile: "प्रोफाइल", profileHelp: "वर्तमान सत्रम्.", usernameLabel: "उपयोक्तृनाम", logout: "निर्गच्छतु",
         book: "स्थानं आरक्षतु", cancel: "आरक्षणं निरस्यतु", noBookings: "सक्रियम् आरक्षणं नास्ति.", loading: "आरोहति...", noStations: "स्थानकानि न उपलब्धानि.", selectedRequired: "प्रथमं स्थानकं चिनोतु.", saving: "आरक्षणं रक्ष्यते...", bookingFailed: "आरक्षणं रक्षितुं न शक्यते.",
         askLocation: "EV स्थानकस्य आरक्षणार्थं नगरं वा स्थानं वदतु.", noStationsLocation: "{city} मध्ये स्थानकानि न उपलब्धानि.", bookedStation: "{city} मध्ये {station} आरक्षितम्. समयः: {time}. मूल्यम्: {price}.", bookingCount: "{count} सक्रिय आरक्षणानि सन्ति. Bookings नवीकृतम्.", noActiveBooking: "सक्रियम् आरक्षणं नास्ति.", costEstimate: "अनुमितं {price}, प्रति यूनिट् Rs {rate}.", cancelHelp: "Bookings उद्घाट्य Cancel Booking प्रयोजयतु.", greeting: "नमस्ते. स्थानक-अन्वेषणे आरक्षणे च सहायं करोमि.", welcome: "स्वागतम्. EV स्थानकं आरक्षितुं नगरं वदतु.", fallback: "स्थानक-अन्वेषणे, आरक्षणे, निरसने, मूल्य-गणनायां सहायं करोमि.", nearestShown: "समीपस्थानकानि दर्श्यन्ते. अधिकानि द्रष्टुं See More प्रयोजयतु."
@@ -293,7 +458,8 @@ const translations = {
         bookingTime: "ಬುಕಿಂಗ್ ಸಮಯ", chargingUnits: "ಚಾರ್ಜಿಂಗ್ ಯುನಿಟ್‌ಗಳು", chargerType: "ಚಾರ್ಜರ್ ಪ್ರಕಾರ", estimatedTotal: "ಅಂದಾಜು ಮೊತ್ತ", confirmBooking: "ಬುಕಿಂಗ್ ದೃಢೀಕರಿಸಿ",
         myBookings: "ನನ್ನ ಬುಕಿಂಗ್‌ಗಳು", myBookingsHelp: "ಸಕ್ರಿಯ ಬುಕಿಂಗ್‌ಗಳು ಮತ್ತು ಹಳೆಯ ಬುಕಿಂಗ್ ಇತಿಹಾಸವನ್ನು ನೋಡಿ.", showBookings: "ಬುಕಿಂಗ್ ರಿಫ್ರೆಶ್",
         payments: "ಪಾವತಿಗಳು", paymentsHelp: "ಪಾವತಿಯ ಮೊದಲು ವೆಚ್ಚ ನೋಡಿ.", estimatedCharge: "ಅಂದಾಜು ಚಾರ್ಜ್", paymentHint: "ಸ್ಟೇಷನ್ ಮತ್ತು ಯುನಿಟ್ ಆಯ್ಕೆಮಾಡಿ.",
-        assistantTitle: "EV ಸಹಾಯಕ", assistantHelp: "ಬುಕಿಂಗ್, ಸ್ಟೇಷನ್, ವೆಚ್ಚ, ರದ್ದು ಬಗ್ಗೆ ಕೇಳಿ.", promptBook: "ಸ್ಟೇಷನ್ ಬುಕ್", promptBookings: "ಬುಕಿಂಗ್ ತೋರಿಸಿ", promptCost: "ವೆಚ್ಚ ಅಂದಾಜು", chatPlaceholder: "EV ಸಹಾಯಕನನ್ನು ಕೇಳಿ...", send: "ಕಳುಹಿಸಿ",
+        assistantTitle: "EV ಸಹಾಯಕ", assistantHelp: "ಬುಕಿಂಗ್, ಸ್ಟೇಷನ್, ವೆಚ್ಚ, ರದ್ದು ಬಗ್ಗೆ ಕೇಳಿ.", promptBook: "ಸ್ಟೇಷನ್ ಬುಕ್", promptBookings: "ನನ್ನ ಬುಕಿಂಗ್ ತೋರಿಸಿ", promptCost: "ವೆಚ್ಚ ಅಂದಾಜು", chatPlaceholder: "EV ಸಹಾಯಕನನ್ನು ಕೇಳಿ...", send: "ಕಳುಹಿಸಿ",
+        bookingListIntro: "ನಿಮ್ಮ ಬುಕಿಂಗ್‌ಗಳು:", noActiveBooking: "ಸಕ್ರಿಯ ಬುಕಿಂಗ್ ಇಲ್ಲ.", activeBookingsLabel: "ಸಕ್ರಿಯ:", pastBookingsLabel: "ಹಳೆಯ:", pastBookingsMore: "...ಇನ್ನೂ {count} ಹಳೆಯ ಬುಕಿಂಗ್.", bookingsLoadFailed: "ಬುಕಿಂಗ್ ಲೋಡ್ ಆಗಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.", paymentPending: "ಪಾವತಿ ಬಾಕಿ", paymentPaid: "ಪಾವತಿ ಆಗಿದೆ",
         profile: "ಪ್ರೊಫೈಲ್", profileHelp: "ಪ್ರಸ್ತುತ ಸೆಷನ್.", usernameLabel: "ಬಳಕೆದಾರ ಹೆಸರು", logout: "ಲಾಗೌಟ್",
         book: "ಸ್ಲಾಟ್ ಬುಕ್", cancel: "ಬುಕಿಂಗ್ ರದ್ದು", noBookings: "ಸಕ್ರಿಯ ಬುಕಿಂಗ್ ಇಲ್ಲ.", loading: "ಲೋಡ್ ಆಗುತ್ತಿದೆ...", noStations: "ಸ್ಟೇಷನ್‌ಗಳು ಲಭ್ಯವಿಲ್ಲ.", selectedRequired: "ಮೊದಲು ಸ್ಟೇಷನ್ ಆಯ್ಕೆಮಾಡಿ.", saving: "ಬುಕಿಂಗ್ ಉಳಿಸಲಾಗುತ್ತಿದೆ...", bookingFailed: "ಬುಕಿಂಗ್ ಉಳಿಸಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ.",
         askLocation: "EV ಚಾರ್ಜಿಂಗ್ ಸ್ಟೇಷನ್ ಬುಕ್ ಮಾಡಲು ನಗರ ಅಥವಾ ಸ್ಥಳ ಹೇಳಿ.", noStationsLocation: "{city} ನಲ್ಲಿ ಸ್ಟೇಷನ್‌ಗಳು ಲಭ್ಯವಿಲ್ಲ.", bookedStation: "{city} ನಲ್ಲಿ {station} ಬುಕ್ ಆಯಿತು. ಸಮಯ: {time}. ಮೊತ್ತ: {price}.", bookingCount: "{count} ಸಕ್ರಿಯ ಬುಕಿಂಗ್‌ಗಳಿವೆ. Bookings ರಿಫ್ರೆಶ್ ಆಗಿದೆ.", noActiveBooking: "ಸಕ್ರಿಯ ಬುಕಿಂಗ್ ಇಲ್ಲ.", costEstimate: "ಅಂದಾಜು {price}, ಪ್ರತಿ ಯುನಿಟ್ Rs {rate}.", cancelHelp: "Bookings ತೆರೆದು Cancel Booking ಬಳಸಿ.", greeting: "ನಮಸ್ಕಾರ. ಸ್ಟೇಷನ್ ಹುಡುಕಲು, ಬುಕ್ ಮಾಡಲು, ವೆಚ್ಚ ಅಂದಾಜಿಸಲು ಸಹಾಯ ಮಾಡುತ್ತೇನೆ.", welcome: "ಸ್ವಾಗತ. EV ಸ್ಟೇಷನ್ ಬುಕ್ ಮಾಡಲು ನಗರ ಹೇಳಿ.", fallback: "ಸ್ಟೇಷನ್ ಹುಡುಕಾಟ, ಬುಕಿಂಗ್, ರದ್ದು, ವೆಚ್ಚ ಅಂದಾಜಿನಲ್ಲಿ ಸಹಾಯ ಮಾಡುತ್ತೇನೆ.", nearestShown: "ಹತ್ತಿರದ ಸ್ಟೇಷನ್‌ಗಳನ್ನು ತೋರಿಸುತ್ತಿದ್ದೇವೆ. ಇನ್ನಷ್ಟು ನೋಡಲು See More ಬಳಸಿ."
@@ -302,32 +468,32 @@ const translations = {
 
 const assistantLocaleExtensions = {
     tamil: {
-        languagesSupportedHint: "ஆதரவு மொழிகள்: ஆங்கிலம், தமிழ், இந்தி, தெலுங்கு, கன்னடம், மலையாளம், சமஸ்கிருதம்.", assistantHelp: "உங்கள் மொழியில் நிலையம் தேட, பதிவு செய், முன்பதிவுகள் மற்றும் செலவு குறித்து கேளுங்கள்.", chatLanguageLabel: "மொழி", chatPlaceholder: "தமிழில் கேளுங்கள், எ.கா. கோயம்புத்தூரில் நிலையங்களை காட்டு", promptStationsQuery: "கோயம்புத்தூரில் நிலையங்களை காட்டு", promptBook: "நிலையம் பதிவு", promptStations: "கிடைக்கும் நிலையங்கள்", promptBookings: "முன்பதிவுகள்", promptCost: "செலவு மதிப்பீடு",
+        languagesSupportedHint: "ஆதரவு மொழிகள்: ஆங்கிலம், தமிழ், இந்தி, தெலுங்கு, கன்னடம், மலையாளம், சமஸ்கிருதம்.", assistantHelp: "உங்கள் மொழியில் நிலையம் தேட, பதிவு செய், முன்பதிவுகள் மற்றும் செலவு குறித்து கேளுங்கள்.", chatLanguageLabel: "மொழி", chatPlaceholder: "தமிழில் கேளுங்கள், எ.கா. கோயம்புத்தூரில் நிலையங்களை காட்டு", promptStationsQuery: "கோயம்புத்தூரில் நிலையங்களை காட்டு", promptBook: "நிலையம் பதிவு", promptStations: "கிடைக்கும் நிலையங்கள்", promptBookings: "என் முன்பதிவுகள்", promptCost: "செலவு மதிப்பீடு",
         assistantHelpText: "நான் உதவ முடியும்:\n• நிலையங்கள் — \"ஹைதராபாத்தில் நிலையங்களை காட்டு\"\n• பதிவு — \"பதிவு 1\" பின்னர் யூனிட்கள், சார்ஜர், தேதி & நேரம்\n• முன்பதிவுகள் — \"என் முன்பதிவுகள்\"\n• செலவு — \"10 யூனிட் செலவு\"",
         pickStation: "எந்த நிலையத்தை பதிவு செய்ய வேண்டும்? 1-5 எண் அல்லது நிலைய பெயரை சொல்லுங்கள். பின்னர் யூனிட்கள், சார்ஜர் வகை, தேதி மற்றும் நேரம் கேட்பேன்.", askBookingUnits: "{station} க்கு எத்தனை சார்ஜிங் யூனிட்கள்? (எ.கா. 10)", askBookingCharger: "எந்த சார்ஜர் வகை?", askBookingDateTime: "முன்பதிவு தேதி மற்றும் நேரம் என்ன? (எ.கா. 21/05/2026 14:30, நாளை 10:00)", invalidBookingUnits: "1 முதல் 200 வரை யூனிட்களை உள்ளிடுங்கள் (எ.கா. 10).", invalidBookingCharger: "1, 2, அல்லது 3 என பதிலளிக்கவும் — அல்லது AC Charger, Fast DC, Ultra Fast என சொல்லுங்கள்.", invalidBookingDateTime: "சரியான தேதி மற்றும் நேரத்தை உள்ளிடுங்கள் (எ.கா. 25/05/2026 15:00 அல்லது நாளை 9:30).", stationListIntro: "கிடைக்கும் EV சார்ஜிங் நிலையங்கள்", noStationsToPick: "இன்னும் நிலையங்கள் ஏற்றப்படவில்லை. முதலில் நகரம் அல்லது பின்கோடை சொல்லுங்கள்.", bookedConfirm: "{station} — {time} — {price}. பணம் செலுத்தும் பக்கம் திறக்கப்படுகிறது...", bookingFailedAssistant: "முன்பதிவு முடிக்க முடியவில்லை: {reason}", bookingListIntro: "உங்கள் முன்பதிவுகள்:", stationSelected: "{station} தேர்வு செய்யப்பட்டது ({available}/{total} ஸ்லாட், {distance}). \"பதிவு {number}\" என சொல்லவும்.", stationRangeInvalid: "1 முதல் {max} வரை ஒரு நிலையத்தை தேர்வு செய்யுங்கள்.", stationListNear: " {area} அருகில்", stationListMore: "\n\n{shown} / {total} காட்டப்படுகின்றன. வேறு நகரம் அல்லது பின்கோடை சொல்லுங்கள்.", stationListItem: "{index}. {name} — {available}/{total} ஸ்லாட் கிடைக்கும், {distance}\n   {address}", activeBookingsLabel: "செயலில்:", pastBookingsLabel: "முடிந்தவை:", pastBookingsMore: "...மேலும் {count} பழைய முன்பதிவுகள்.", bookingsLoadFailed: "முன்பதிவுகளை இப்போது ஏற்ற முடியவில்லை. சிறிது நேரம் கழித்து முயற்சிக்கவும்.", languageChanged: "உரையாடல் மொழி {language} ஆக மாற்றப்பட்டது. அந்த மொழியில் கேளுங்கள்.", chargerOptionLine: "{index}. {type} (ஒரு யூனிட்டுக்கு Rs {rate})", paymentPending: "பணம் நிலுவையில்", paymentPaid: "செலுத்தப்பட்டது", cancelHelp: "\"என் முன்பதிவுகள்\" என சொல்லி பார்க்கவும். ரத்து செய்ய Bookings பகுதியை பயன்படுத்தவும்.", welcome: "வணக்கம்! நகரம்/பின்கோடு மூலம் EV நிலையங்களை காட்டி பதிவு செய்ய உதவுகிறேன். \"கோயம்புத்தூரில் நிலையங்களை காட்டு\" என முயற்சிக்கவும்.", greeting: "வணக்கம்! நிலையம், பதிவு, முன்பதிவு, செலவு குறித்து கேளுங்கள்.", fallback: "நிலைய தேடல், பதிவு, முன்பதிவு, செலவு மதிப்பீட்டில் உதவ முடியும்."
     },
     hindi: {
-        languagesSupportedHint: "समर्थित भाषाएं: अंग्रेज़ी, तमिल, हिंदी, तेलुगु, कन्नड़, मलयालम, संस्कृत।", assistantHelp: "अपनी भाषा में स्टेशन खोजें, बुक करें, बुकिंग और लागत पूछें.", chatLanguageLabel: "भाषा", chatPlaceholder: "हिंदी में पूछें, जैसे Coimbatore में स्टेशन दिखाएं", promptStationsQuery: "कोयंबटूर में स्टेशन दिखाएं", promptBook: "स्टेशन बुक करें", promptStations: "उपलब्ध स्टेशन", promptBookings: "मेरी बुकिंग", promptCost: "लागत अनुमान",
+        languagesSupportedHint: "समर्थित भाषाएं: अंग्रेज़ी, तमिल, हिंदी, तेलुगु, कन्नड़, मलयालम, संस्कृत।", assistantHelp: "अपनी भाषा में स्टेशन खोजें, बुक करें, बुकिंग और लागत पूछें.", chatLanguageLabel: "भाषा", chatPlaceholder: "हिंदी में पूछें, जैसे Coimbatore में स्टेशन दिखाएं", promptStationsQuery: "कोयंबटूर में स्टेशन दिखाएं", promptBook: "स्टेशन बुक करें", promptStations: "उपलब्ध स्टेशन", promptBookings: "मेरी बुकिंग दिखाएं", promptCost: "लागत अनुमान",
         assistantHelpText: "मैं मदद कर सकता हूं:\n• स्टेशन — \"Hyderabad में स्टेशन\"\n• बुकिंग — \"बुक 1\" फिर यूनिट, चार्जर, तारीख और समय\n• बुकिंग सूची — \"मेरी बुकिंग\"\n• लागत — \"10 यूनिट की लागत\"",
         pickStation: "कौन सा स्टेशन बुक करें? 1-5 नंबर या स्टेशन का नाम बताएं। फिर यूनिट, चार्जर प्रकार, तारीख और समय पूछूंगा।", askBookingUnits: "{station} के लिए कितने चार्जिंग यूनिट? (जैसे 10)", askBookingCharger: "कौन सा चार्जर प्रकार?", askBookingDateTime: "बुकिंग की तारीख और समय क्या है? (जैसे 21/05/2026 14:30, कल 10:00)", invalidBookingUnits: "1 से 200 के बीच यूनिट दर्ज करें (जैसे 10)।", invalidBookingCharger: "1, 2, या 3 लिखें — या AC Charger, Fast DC, Ultra Fast।", invalidBookingDateTime: "सही तारीख और समय दर्ज करें (जैसे 25/05/2026 15:00 या कल 9:30)।", stationListIntro: "उपलब्ध EV चार्जिंग स्टेशन", noStationsToPick: "अभी स्टेशन लोड नहीं हैं। पहले शहर या पिनकोड बताएं।", bookedConfirm: "{station} — {time} — {price}. भुगतान पृष्ठ खोला जा रहा है...", bookingFailedAssistant: "बुकिंग पूरी नहीं हो सकी: {reason}", bookingListIntro: "आपकी बुकिंग:", stationSelected: "{station} चुना गया ({available}/{total} स्लॉट, {distance})। \"बुक {number}\" कहें।", stationRangeInvalid: "1 से {max} के बीच स्टेशन चुनें।", stationListNear: " {area} के पास", stationListMore: "\n\n{shown} / {total} दिखाए जा रहे हैं। दूसरा शहर या पिनकोड बताएं।", stationListItem: "{index}. {name} — {available}/{total} स्लॉट खाली, {distance}\n   {address}", activeBookingsLabel: "सक्रिय:", pastBookingsLabel: "पिछली:", pastBookingsMore: "...और {count} पिछली बुकिंग।", bookingsLoadFailed: "बुकिंग अभी लोड नहीं हो सकीं। थोड़ देर बाद कोशिश करें।", languageChanged: "बातचीत की भाषा {language} पर सेट की गई। उसी भाषा में लिखें।", chargerOptionLine: "{index}. {type} (Rs {rate}/यूनिट)", paymentPending: "भुगतान लंबित", paymentPaid: "भुगतान हो गया", cancelHelp: "\"मेरी बुकिंग\" कहकर देखें। रद्द करने के लिए Bookings खोलें।", welcome: "नमस्ते! मैं शहर/पिनकोड से EV स्टेशन दिखाकर बुक करने में मदद करता हूं। \"Coimbatore में स्टेशन\" आज़माएं।", greeting: "नमस्ते! स्टेशन, बुकिंग, लागत — कुछ भी पूछें।", fallback: "स्टेशन खोज, बुकिंग, लागत अनुमान में मदद कर सकता हूं।"
     },
     malayalam: {
-        languagesSupportedHint: "പിന്തുണയ്ക്കുന്ന ഭാഷകൾ: ഇംഗ്ലീഷ്, തമിഴ്, ഹിന്ദി, തെലുങ്ക്, കന്നഡ, മലയാളം, സംസ്കൃതം.", assistantHelp: "നിങ്ങളുടെ ഭാഷയിൽ സ്റ്റേഷൻ, ബുക്കിംഗ്, ചെലവ് ചോദിക്കുക.", chatLanguageLabel: "ഭാഷ", chatPlaceholder: "മലയാളത്തിൽ ചോദിക്കുക, ഉദാ. Coimbatore ൽ സ്റ്റേഷനുകൾ", promptStationsQuery: "കോയമ്പത്തൂരിൽ സ്റ്റേഷനുകൾ കാണിക്കുക", promptBook: "സ്റ്റേഷൻ ബുക്ക്", promptStations: "ലഭ്യമായ സ്റ്റേഷനുകൾ", promptBookings: "എന്റെ ബുക്കിംഗ്", promptCost: "ചെലവ് കണക്ക്",
+        languagesSupportedHint: "പിന്തുണയ്ക്കുന്ന ഭാഷകൾ: ഇംഗ്ലീഷ്, തമിഴ്, ഹിന്ദി, തെലുങ്ക്, കന്നഡ, മലയാളം, സംസ്കൃതം.", assistantHelp: "നിങ്ങളുടെ ഭാഷയിൽ സ്റ്റേഷൻ, ബുക്കിംഗ്, ചെലവ് ചോദിക്കുക.", chatLanguageLabel: "ഭാഷ", chatPlaceholder: "മലയാളത്തിൽ ചോദിക്കുക, ഉദാ. Coimbatore ൽ സ്റ്റേഷനുകൾ", promptStationsQuery: "കോയമ്പത്തൂരിൽ സ്റ്റേഷനുകൾ കാണിക്കുക", promptBook: "സ്റ്റേഷൻ ബുക്ക്", promptStations: "ലഭ്യമായ സ്റ്റേഷനുകൾ", promptBookings: "എന്റെ ബുക്കിംഗ് കാണുക", promptCost: "ചെലവ് കണക്ക്",
         assistantHelpText: "സഹായിക്കാം:\n• സ്റ്റേഷനുകൾ — നഗരം/പിൻകോഡ്\n• ബുക്കിംഗ് — \"ബുക്ക് 1\" പിന്നെ യൂണിറ്റ്, ചാർജർ, തീയതി & സമയം\n• ബുക്കിംഗ് — \"എന്റെ ബുക്കിംഗ്\"\n• ചെലവ് — \"10 യൂണിറ്റ് ചെലവ്\"",
         pickStation: "ഏത് സ്റ്റേഷൻ ബുക്ക് ചെയ്യണം? 1-5 നമ്പർ അല്ലെങ്കിൽ പേര് പറയുക. പിന്നെ യൂണിറ്റ്, ചാർജർ തരം, തീയതിയും സമയവും ചോദിക്കും.", askBookingUnits: "{station} ന് എത്ര ചാർജിംഗ് യൂണിറ്റ്? (ഉദാ. 10)", askBookingCharger: "ഏത് ചാർജർ തരം?", askBookingDateTime: "ബുക്കിംഗ് തീയതിയും സമയവും എന്താണ്? (ഉദാ. 21/05/2026 14:30, നാളെ 10:00)", invalidBookingUnits: "1-200 യൂണിറ്റ് നൽകുക (ഉദാ. 10).", invalidBookingCharger: "1, 2, 3 — അല്ലെങ്കിൽ AC Charger, Fast DC, Ultra Fast.", invalidBookingDateTime: "ശരിയായ തീയതിയും സമയവും നൽകുക (ഉദാ. 25/05/2026 15:00 അല്ലെങ്കിൽ നാളെ 9:30).", stationListIntro: "ലഭ്യമായ EV ചാർജിംഗ് സ്റ്റേഷനുകൾ", noStationsToPick: "സ്റ്റേഷനുകൾ ലോഡ് ചെയ്തിട്ടില്ല. നഗരം അല്ലെങ്കിൽ പിൻകോഡ് പറയുക.", bookedConfirm: "{station} — {time} — {price}. പേയ്മെന്റ് പേജ് തുറക്കുന്നു...", bookingFailedAssistant: "ബുക്കിംഗ് പൂർത്തിയാക്കാനായില്ല: {reason}", bookingListIntro: "നിങ്ങളുടെ ബുക്കിംഗുകൾ:", stationSelected: "{station} തിരഞ്ഞു ({available}/{total} സ്ലോട്ട്, {distance}). \"ബുക്ക് {number}\" എന്ന് പറയുക.", stationRangeInvalid: "1 മുതൽ {max} വരെ സ്റ്റേഷൻ തിരഞ്ഞെടുക്കുക.", stationListNear: " {area} സമീപം", stationListMore: "\n\n{shown} / {total} കാണിക്കുന്നു. മറ്റ് നഗരം പറയുക.", stationListItem: "{index}. {name} — {available}/{total} സ്ലോട്ട്, {distance}\n   {address}", activeBookingsLabel: "സജീവം:", pastBookingsLabel: "കഴിഞ്ഞത്:", pastBookingsMore: "...കൂടെ {count} പഴയ ബുക്കിംഗ്.", bookingsLoadFailed: "ബുക്കിംഗ് ലോഡ് ചെയ്യാനായില്ല. വീണ്ടും ശ്രമിക്കുക.", languageChanged: "ഭാഷ {language} ആയി മാറ്റി. ആ ഭാഷയിൽ ടൈപ്പ് ചെയ്യുക.", chargerOptionLine: "{index}. {type} (Rs {rate}/യൂണിറ്റ്)", paymentPending: "പേയ്മെന്റ് ബാക്കി", paymentPaid: "പണം നൽകി", cancelHelp: "\"എന്റെ ബുക്കിംഗ്\" എന്ന് പറയുക. റദ്ദാക്കാൻ Bookings ഉപയോഗിക്കുക.", welcome: "നമസ്കാരം! നഗരം/പിൻകോഡ് വഴി EV സ്റ്റേഷനുകൾ കാണിച്ച് ബുക്ക് ചെയ്യാം.", greeting: "നമസ്കാരം! സ്റ്റേഷൻ, ബുക്കിംഗ്, ചെലവ് — ചോദിക്കുക.", fallback: "സ്റ്റേഷൻ തിരയൽ, ബുക്കിംഗ്, ചെലവ് കണക്കിൽ സഹായിക്കാം."
     },
     telugu: {
-        languagesSupportedHint: "మద్దతు భాషలు: ఇంగ్లీష్, తమిళం, హిందీ, తెలుగు, కన్నడ, మలయాళం, సంస్కృతం.", assistantHelp: "మీ భాషలో స్టేషన్, బుకింగ్, ఖర్చు గురించి అడగండి.", chatLanguageLabel: "భాష", chatPlaceholder: "తెలుగులో అడగండి, ఉదా. Coimbatore లో స్టేషన్లు", promptStationsQuery: "కోయంబత్తూర్లో స్టేషన్లు చూపించు", promptBook: "స్టేషన్ బుక్", promptStations: "అందుబాటులో స్టేషన్లు", promptBookings: "నా బుకింగ్స్", promptCost: "ఖర్చు అంచనా",
+        languagesSupportedHint: "మద్దతు భాషలు: ఇంగ్లీష్, తమిళం, హిందీ, తెలుగు, కన్నడ, మలయాళం, సంస్కృతం.", assistantHelp: "మీ భాషలో స్టేషన్, బుకింగ్, ఖర్చు గురించి అడగండి.", chatLanguageLabel: "భాష", chatPlaceholder: "తెలుగులో అడగండి, ఉదా. Coimbatore లో స్టేషన్లు", promptStationsQuery: "కోయంబత్తూర్లో స్టేషన్లు చూపించు", promptBook: "స్టేషన్ బుక్", promptStations: "అందుబాటులో స్టేషన్లు", promptBookings: "నా బుకింగ్స్ చూపు", promptCost: "ఖర్చు అంచనా",
         assistantHelpText: "సహాయం:\n• స్టేషన్లు — నగరం/పిన్‌కోడ్\n• బుకింగ్ — \"బుక్ 1\" తర్వాత యూనిట్లు, చార్జర్, తేదీ & సమయం\n• బుకింగ్ జాబితా — \"నా బుకింగ్స్\"\n• ఖర్చు — \"10 యూనిట్ల ఖర్చు\"",
         pickStation: "ఏ స్టేషన్ బుక్ చేయాలి? 1-5 సంఖ్య లేదా పేరు చెప్పండి. తర్వాత యూనిట్లు, చార్జర్ రకం, తేదీ మరియు సమయం అడుగుతాను.", askBookingUnits: "{station} కు ఎన్ని చార్జింగ్ యూనిట్లు? (ఉదా. 10)", askBookingCharger: "ఏ చార్జర్ రకం?", askBookingDateTime: "బుకింగ్ తేదీ మరియు సమయం ఏమిటి? (ఉదా. 21/05/2026 14:30, రేపు 10:00)", invalidBookingUnits: "1 నుండి 200 యూనిట్లు నమోదు చేయండి (ఉదా. 10).", invalidBookingCharger: "1, 2, 3 — లేదా AC Charger, Fast DC, Ultra Fast.", invalidBookingDateTime: "సరైన తేదీ మరియు సమయం నమోదు చేయండి (ఉదా. 25/05/2026 15:00 లేదా రేపు 9:30).", stationListIntro: "అందుబాటులో ఉన్న EV చార్జింగ్ స్టేషన్లు", noStationsToPick: "స్టేషన్లు ఇంకా లోడ్ కాలేదు. ముందు నగరం లేదా పిన్‌కోడ్ చెప్పండి.", bookedConfirm: "{station} — {time} — {price}. చెల్లింపు పేజీ తెరుస్తున్నాం...", bookingFailedAssistant: "బుకింగ్ పూర్తి కాలేదు: {reason}", bookingListIntro: "మీ బుకింగ్స్:", stationSelected: "{station} ఎంచుకున్నారు ({available}/{total} స్లాట్లు, {distance}). \"బుక్ {number}\" అనండి.", stationRangeInvalid: "1 నుండి {max} మధ్య స్టేషన్ ఎంచుకోండి.", stationListNear: " {area} దగ్గర", stationListMore: "\n\n{shown} / {total} చూపిస్తున్నాం. వేరే నగరం చెప్పండి.", stationListItem: "{index}. {name} — {available}/{total} స్లాట్లు, {distance}\n   {address}", activeBookingsLabel: "సక్రియం:", pastBookingsLabel: "గతం:", pastBookingsMore: "...మరో {count} పాత బుకింగ్స్.", bookingsLoadFailed: "బుకింగ్స్ లోడ్ కాలేదు. మళ్లీ ప్రయత్నించండి.", languageChanged: "సంభాషణ భాష {language} కు మార్చబడింది.", chargerOptionLine: "{index}. {type} (Rs {rate}/యూనిట్)", paymentPending: "చెల్లింపు పెండింగ్", paymentPaid: "చెల్లించబడింది", cancelHelp: "\"నా బుకింగ్స్\" అని చెప్పండి. రద్దు కోసం Bookings ఉపయోగించండి.", welcome: "నమస్తే! నగరం/పిన్‌కోడ్ ద్వారా EV స్టేషన్లు చూపించి బుక్ చేస్తాను.", greeting: "నమస్తే! స్టేషన్, బుకింగ్, ఖర్చు అడగండి.", fallback: "స్టేషన్ శోధన, బుకింగ్, ఖర్చు అంచనాలో సహాయం చేస్తాను."
     },
     sanskrit: {
-        languagesSupportedHint: "समर्थिताः भाषाः: English, Tamil, Hindi, Telugu, Kannada, Malayalam, Sanskrit.", assistantHelp: "स्वभाषायां स्थानकं, आरक्षणं, मूल्यं पृच्छतु.", chatLanguageLabel: "भाषा", chatPlaceholder: "संस्कृते पृच्छतु, यथा Coimbatore मध्ये स्थानकानि", promptStationsQuery: "कोयम्बटूरे स्थानकानि दर्शय", promptBook: "स्थानकं आरक्षतु", promptStations: "उपलब्धानि स्थानकानि", promptBookings: "मम आरक्षणानि", promptCost: "मूल्यानुमानम्",
+        languagesSupportedHint: "समर्थिताः भाषाः: English, Tamil, Hindi, Telugu, Kannada, Malayalam, Sanskrit.", assistantHelp: "स्वभाषायां स्थानकं, आरक्षणं, मूल्यं पृच्छतु.", chatLanguageLabel: "भाषा", chatPlaceholder: "संस्कृते पृच्छतु, यथा Coimbatore मध्ये स्थानकानि", promptStationsQuery: "कोयम्बटूरे स्थानकानि दर्शय", promptBook: "स्थानकं आरक्षतु", promptStations: "उपलब्धानि स्थानकानि", promptBookings: "मम आरक्षणानि दर्शय", promptCost: "मूल्यानुमानम्",
         assistantHelpText: "साहाय्यम्:\n• स्थानकानि — नगरं वा पिनकोडम्\n• आरक्षणम् — \"1 आरक्षतु\" पश्चात् यूनिट्, चार्जरः, दिनाङ्कः समयः च\n• आरक्षणसूची — \"मम आरक्षणानि\"\n• मूल्यम् — \"10 यूनिट् मूल्यम्\"",
         pickStation: "किं स्थानकं आरक्षणीयम्? 1-5 संख्या वा नाम वदतु. पश्चात् यूनिट्, चार्जरः, दिनाङ्कः समयः च.", askBookingUnits: "{station} कृते कति यूनिट्? (यथा 10)", askBookingCharger: "कः चार्जरप्रकारः?", askBookingDateTime: "आरक्षणस्य दिनाङ्कः समयः च कः? (यथा 21/05/2026 14:30, श्वः 10:00)", invalidBookingUnits: "1-200 यूनिट् लिखतु.", invalidBookingCharger: "1, 2, 3 — AC Charger, Fast DC, Ultra Fast वा.", invalidBookingDateTime: "योग्यं दिनाङ्क-समयं लिखतु (यथा 25/05/2026 15:00 वा श्वः 9:30).", stationListIntro: "उपलब्धानि EV स्थानकानि", noStationsToPick: "प्रथमं नगरं वा पिनकोडं वदतु.", bookedConfirm: "{station} — {time} — {price}. भुक्तिपृष्ठं उद्घाट्यते...", bookingFailedAssistant: "आरक्षणं न समाप्तम्: {reason}", bookingListIntro: "भवतः आरक्षणानि:", stationSelected: "{station} चितम् ({available}/{total} स्लॉट, {distance}). \"आरक्ष {number}\" वदतु.", stationRangeInvalid: "1-{max} मध्ये चिनोतु.", stationListNear: " {area} समीपे", stationListMore: "\n\n{shown}/{total} दर्श्यन्ते.", stationListItem: "{index}. {name} — {available}/{total} स्लॉट, {distance}\n   {address}", activeBookingsLabel: "सक्रियम्:", pastBookingsLabel: "भूतम्:", pastBookingsMore: "...{count} अधिकानि.", bookingsLoadFailed: "आरक्षणानि लोड् न शक्यन्ते.", languageChanged: "भाषा {language} कृता.", chargerOptionLine: "{index}. {type} (Rs {rate}/यूनिट्)", paymentPending: "लम्बितम्", paymentPaid: "भुक्तम्", cancelHelp: "\"मम आरक्षणानि\" इति वदतु.", welcome: "स्वागतम्! नगरेण स्थानकानि दर्शयामि.", greeting: "नमस्ते! पृच्छतु.", fallback: "स्थानक-आरक्षण-मूल्येषु साहाय्यम्."
     },
     kannada: {
-        languagesSupportedHint: "ಬೆಂಬಲಿತ ಭಾಷೆಗಳು: ಇಂಗ್ಲಿಷ್, ತಮಿಳು, ಹಿಂದಿ, ತೆಲುಗು, ಕನ್ನಡ, ಮಲಯಾಳಂ, ಸಂಸ್ಕೃತ.", assistantHelp: "ನಿಮ್ಮ ಭಾಷೆಯಲ್ಲಿ ಸ್ಟೇಷನ್, ಬುಕಿಂಗ್, ವೆಚ್ಚ ಕೇಳಿ.", chatLanguageLabel: "ಭಾಷೆ", chatPlaceholder: "ಕನ್ನಡದಲ್ಲಿ ಕೇಳಿ, ಉದಾ. Coimbatore ನಲ್ಲಿ ಸ್ಟೇಷನ್‌ಗಳು", promptStationsQuery: "ಕೋಯಮಂಬಟೂರಿನಲ್ಲಿ ಸ್ಟೇಷನ್‌ಗಳನ್ನು ತೋರಿಸಿ", promptBook: "ಸ್ಟೇಷನ್ ಬುಕ್", promptStations: "ಲಭ್ಯವಿರುವ ಸ್ಟೇಷನ್‌ಗಳು", promptBookings: "ನನ್ನ ಬುಕಿಂಗ್", promptCost: "ವೆಚ್ಚ ಅಂದಾಜು",
+        languagesSupportedHint: "ಬೆಂಬಲಿತ ಭಾಷೆಗಳು: ಇಂಗ್ಲಿಷ್, ತಮಿಳು, ಹಿಂದಿ, ತೆಲುಗು, ಕನ್ನಡ, ಮಲಯಾಳಂ, ಸಂಸ್ಕೃತ.", assistantHelp: "ನಿಮ್ಮ ಭಾಷೆಯಲ್ಲಿ ಸ್ಟೇಷನ್, ಬುಕಿಂಗ್, ವೆಚ್ಚ ಕೇಳಿ.", chatLanguageLabel: "ಭಾಷೆ", chatPlaceholder: "ಕನ್ನಡದಲ್ಲಿ ಕೇಳಿ, ಉದಾ. Coimbatore ನಲ್ಲಿ ಸ್ಟೇಷನ್‌ಗಳು", promptStationsQuery: "ಕೋಯಮಂಬಟೂರಿನಲ್ಲಿ ಸ್ಟೇಷನ್‌ಗಳನ್ನು ತೋರಿಸಿ", promptBook: "ಸ್ಟೇಷನ್ ಬುಕ್", promptStations: "ಲಭ್ಯವಿರುವ ಸ್ಟೇಷನ್‌ಗಳು", promptBookings: "ನನ್ನ ಬುಕಿಂಗ್ ತೋರಿಸಿ", promptCost: "ವೆಚ್ಚ ಅಂದಾಜು",
         assistantHelpText: "ಸಹಾಯ:\n• ಸ್ಟೇಷನ್‌ಗಳು — ನಗರ/ಪಿನ್‌ಕೋಡ್\n• ಬುಕಿಂಗ್ — \"ಬುಕ್ 1\" ನಂತರ ಯುನಿಟ್, ಚಾರ್ಜರ್, ದಿನಾಂಕ & ಸಮಯ\n• ಬುಕಿಂಗ್ ಪಟ್ಟಿ — \"ನನ್ನ ಬುಕಿಂಗ್\"\n• ವೆಚ್ಚ — \"10 ಯುನಿಟ್ ವೆಚ್ಚ\"",
         pickStation: "ಯಾವ ಸ್ಟೇಷನ್ ಬುಕ್ ಮಾಡಬೇಕು? 1-5 ಸಂಖ್ಯೆ ಅಥವಾ ಹೆಸರು ಹೇಳಿ. ನಂತರ ಯುನಿಟ್, ಚಾರ್ಜರ್, ದಿನಾಂಕ ಮತ್ತು ಸಮಯ ಕೇಳುತ್ತೇನೆ.", askBookingUnits: "{station} ಗೆ ಎಷ್ಟು ಚಾರ್ಜಿಂಗ್ ಯುನಿಟ್? (ಉದಾ. 10)", askBookingCharger: "ಯಾವ ಚಾರ್ಜರ್ ಪ್ರಕಾರ?", askBookingDateTime: "ಬುಕಿಂಗ್ ದಿನಾಂಕ ಮತ್ತು ಸಮಯ ಯಾವುದು? (ಉದಾ. 21/05/2026 14:30, ನಾಳೆ 10:00)", invalidBookingUnits: "1-200 ಯುನಿಟ್ ನಮೂದಿಸಿ (ಉದಾ. 10).", invalidBookingCharger: "1, 2, 3 — ಅಥವಾ AC Charger, Fast DC, Ultra Fast.", invalidBookingDateTime: "ಸರಿಯಾದ ದಿನಾಂಕ ಮತ್ತು ಸಮಯ ನಮೂದಿಸಿ (ಉದಾ. 25/05/2026 15:00 ಅಥವಾ ನಾಳೆ 9:30).", stationListIntro: "ಲಭ್ಯವಿರುವ EV ಚಾರ್ಜಿಂಗ್ ಸ್ಟೇಷನ್‌ಗಳು", noStationsToPick: "ಸ್ಟೇಷನ್‌ಗಳು ಲೋಡ್ ಆಗಿಲ್ಲ. ಮೊದಲು ನಗರ ಅಥವಾ ಪಿನ್‌ಕೋಡ್ ಹೇಳಿ.", bookedConfirm: "{station} — {time} — {price}. ಪೇಮೆಂಟ್ ಪುಟ ತೆರೆಯಲಾಗುತ್ತಿದೆ...", bookingFailedAssistant: "ಬುಕಿಂಗ್ ಪೂರ್ಣಗೊಳ್ಳಲಿಲ್ಲ: {reason}", bookingListIntro: "ನಿಮ್ಮ ಬುಕಿಂಗ್‌ಗಳು:", stationSelected: "{station} ಆಯ್ಕೆ ({available}/{total} ಸ್ಲಾಟ್, {distance}). \"ಬುಕ್ {number}\" ಎಂದು ಹೇಳಿ.", stationRangeInvalid: "1-{max} ನಡುವೆ ಸ್ಟೇಷನ್ ಆಯ್ಕೆಮಾಡಿ.", stationListNear: " {area} ಹತ್ತಿರ", stationListMore: "\n\n{shown} / {total} ತೋರಿಸಲಾಗುತ್ತಿದೆ.", stationListItem: "{index}. {name} — {available}/{total} ಸ್ಲಾಟ್, {distance}\n   {address}", activeBookingsLabel: "ಸಕ್ರಿಯ:", pastBookingsLabel: "ಹಿಂದಿನ:", pastBookingsMore: "...ಇನ್ನೂ {count} ಹಿಂದಿನ ಬುಕಿಂಗ್.", bookingsLoadFailed: "ಬುಕಿಂಗ್ ಲೋಡ್ ಆಗಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.", languageChanged: "ಭಾಷೆಯನ್ನು {language} ಗೆ ಬದಲಾಯಿಸಲಾಗಿದೆ.", chargerOptionLine: "{index}. {type} (Rs {rate}/ಯುನಿಟ್)", paymentPending: "ಪೇಮೆಂಟ್ ಬಾಕಿ", paymentPaid: "ಪಾವತಿಸಲಾಗಿದೆ", cancelHelp: "\"ನನ್ನ ಬುಕಿಂಗ್\" ಎಂದು ಹೇಳಿ. ರದ್ದುಗೆ Bookings ಬಳಸಿ.", welcome: "ಸ್ವಾಗತ! ನಗರ/ಪಿನ್‌ಕೋಡ್ ಮೂಲಕ EV ಸ್ಟೇಷನ್‌ಗಳನ್ನು ತೋರಿಸುತ್ತೇನೆ.", greeting: "ನಮಸ್ಕಾರ! ಸ್ಟೇಷನ್, ಬುಕಿಂಗ್, ವೆಚ್ಚ ಕೇಳಿ.", fallback: "ಸ್ಟೇಷನ್ ಹುಡುಕಾಟ, ಬುಕಿಂಗ್, ವೆಚ್ಚ ಅಂದಾಜಿನಲ್ಲಿ ಸಹಾಯ ಮಾಡುತ್ತೇನೆ."
     }
@@ -336,6 +502,19 @@ const assistantLocaleExtensions = {
 Object.keys(assistantLocaleExtensions).forEach(function(languageKey){
     Object.assign(translations[languageKey], assistantLocaleExtensions[languageKey])
 })
+
+const ASSISTANT_MY_BOOKINGS_PHRASES = (function(){
+    const phrases = new Set(ASSISTANT_MY_BOOKINGS_TERMS)
+    Object.keys(translations).forEach(function(languageKey){
+        ["promptBookings", "myBookings"].forEach(function(key){
+            const value = translations[languageKey][key]
+            if(value){
+                phrases.add(String(value).trim())
+            }
+        })
+    })
+    return Array.from(phrases)
+})()
 
 const languageDisplayNames = Object.fromEntries(
     SUPPORTED_LANGUAGES.map(function(entry){
@@ -512,7 +691,10 @@ function trySetLanguageFromCommand(message){
 }
 
 function activateView(viewName){
-    document.querySelectorAll(".nav-link").forEach(function(button){
+    if(!viewName){
+        return
+    }
+    document.querySelectorAll(".nav-link[data-view]").forEach(function(button){
         button.classList.toggle("active", button.dataset.view === viewName)
     })
     document.querySelectorAll(".dashboard-view").forEach(function(view){
@@ -699,9 +881,9 @@ async function findStations(){
                 t("locationFound")
             )
         },
-        function(){
+        async function(){
             const defaultLocation = cityCoordinates.coimbatore
-            loadRealtimeStations(
+            await loadRealtimeStations(
                 defaultLocation.lat,
                 defaultLocation.lon,
                 t("locationDenied")
@@ -723,16 +905,34 @@ async function loadRealtimeStations(lat, lon, successMessage, silent){
 
 async function fetchRealtimeStations(successMessage, resetVisible, resetSelection, silent){
     let fetchFailed = false
+    let fetchErrorStatus = null
+    const lat = Number(currentSearch.lat)
+    const lon = Number(currentSearch.lon)
+    if(!Number.isFinite(lat) || !Number.isFinite(lon)){
+        latestStations = []
+        if(!silent){
+            renderStations(latestStations)
+            if(resetSelection){
+                setBookingPanelEmpty()
+            }
+            setLocationStatus(t("searchStationsHint"))
+        }
+        return
+    }
     try{
+        if(typeof calculateTimeBasedBreakdown !== "function"){
+            throw new Error("Pricing script failed to load. Hard-refresh the page (Ctrl+Shift+R).")
+        }
+
         const controller = new AbortController()
         const timeoutId = window.setTimeout(function(){
             controller.abort()
-        }, 120000)
+        }, 60000)
         const params = new URLSearchParams({
-            lat: currentSearch.lat,
-            lon: currentSearch.lon,
-            distance: currentSearch.distance,
-            max_results: currentSearch.maxResults
+            lat: String(lat),
+            lon: String(lon),
+            distance: String(currentSearch.distance),
+            max_results: String(currentSearch.maxResults)
         })
         const response = await fetch(`/stations?${params.toString()}`, {
             signal: controller.signal,
@@ -740,7 +940,12 @@ async function fetchRealtimeStations(successMessage, resetVisible, resetSelectio
         })
         window.clearTimeout(timeoutId)
         if(!response.ok){
+            fetchErrorStatus = response.status
             throw new Error(`stations ${response.status}`)
+        }
+        const contentType = (response.headers.get("content-type") || "").toLowerCase()
+        if(!contentType.includes("application/json")){
+            throw new Error("Server returned a non-JSON response. Open http://127.0.0.1:8000/dashboard.html after starting the server.")
         }
         const data = await response.json()
         latestStations = Array.isArray(data) ? data.map(normalizeRealtimeStation) : []
@@ -749,6 +954,12 @@ async function fetchRealtimeStations(successMessage, resetVisible, resetSelectio
         latestStations = []
         fetchFailed = true
         console.error(error)
+        if(!silent){
+            const detail = error && error.name === "AbortError"
+                ? "Station search timed out. Check your internet connection and try again."
+                : (error && error.message ? error.message : "Could not load stations.")
+            setLocationStatus(`${t("stationsLoadFailed")} ${detail}`)
+        }
     }
     finally{
         if(resetVisible){
@@ -766,7 +977,8 @@ async function fetchRealtimeStations(successMessage, resetVisible, resetSelectio
                 setLocationStatus(successMessage)
             }
             else if(fetchFailed){
-                setLocationStatus(t("stationsLoadFailed"))
+                const statusHint = fetchErrorStatus ? ` (HTTP ${fetchErrorStatus})` : ""
+                setLocationStatus(t("stationsLoadFailed") + statusHint)
             }
             else{
                 setLocationStatus(t("noStations"))
@@ -818,9 +1030,35 @@ function formatStationCardAddress(station){
 }
 
 function estimateStationPrice(station){
-    const units = Number(document.getElementById("booking_units")?.value || 10)
+    const units = getSelectedBookingUnits()
+    const slotCount = getSelectedBookingSlotCount()
     const chargerType = document.getElementById("booking_charger")?.value || "Fast DC"
-    return money(calculateBookingPrice(units, chargerType))
+    return money(calculateBookingBreakdown(station, units, chargerType, slotCount).total)
+}
+
+function getStationGridPricing(station){
+    const units = getSelectedBookingUnits()
+    const slotCount = getSelectedBookingSlotCount()
+    const chargerType = document.getElementById("booking_charger")?.value || "Fast DC"
+    const breakdown = calculateBookingBreakdown(station, units, chargerType, slotCount)
+    return {
+        units: breakdown.units,
+        slotCount: breakdown.slot_count,
+        chargerType: chargerType,
+        ratePerUnit: breakdown.rate_per_unit,
+        total: breakdown.total
+    }
+}
+
+function renderStationPriceBlock(station){
+    const pricing = getStationGridPricing(station)
+    return `
+        <div class="station-price booking-price">
+            <span class="station-price-label">${t("estTotal")}</span>
+            <strong class="station-price-total">${money(pricing.total)}</strong>
+            <span class="station-price-detail">${pricing.units} ${t("unitsLabel")} × Rs ${pricing.ratePerUnit.toFixed(2)}${t("perUnitShort")}${pricing.slotCount >= 2 ? " · 1 hr" : ""}</span>
+            <span class="station-price-type">${pricing.chargerType}</span>
+        </div>`
 }
 
 function makeStationMapsUrl(station){
@@ -870,9 +1108,6 @@ function updateStationAddress(stationKey, address, silent){
         selectedStation = latestStations.find(function(station){
             return stationLocationKey(station) === stationKey
         }) || selectedStation
-        if(!silent){
-            document.getElementById("selected_station_address").innerText = `Address: ${address}`
-        }
     }
 
     if(!silent){
@@ -1093,6 +1328,9 @@ function applyStationScheduleToBooking(station){
     if(!station){
         return
     }
+    if(applyFirstAvailableSlotToBooking(station)){
+        return
+    }
     const dateValue = getStationSlotDate(station)
     const timeValue = getStationSlotTime(station)
     const bookingValue = buildDatetimeLocalFromParts(dateValue, timeValue)
@@ -1166,6 +1404,86 @@ function getAvailableSlotsFromList(slots){
     })
 }
 
+function normalizeSlotTimeKey(value){
+    return toDatetimeLocalFromSlot(value)
+}
+
+function findSlotInAvailability(slots, bookingTimeValue){
+    const target = normalizeSlotTimeKey(bookingTimeValue)
+    if(!Array.isArray(slots) || !target){
+        return null
+    }
+    return slots.find(function(slot){
+        return normalizeSlotTimeKey(slot.time) === target
+    }) || null
+}
+
+function isSlotAvailableInCache(station, bookingTimeValue){
+    const localValue = normalizeSlotTimeKey(bookingTimeValue)
+    if(!station || !localValue){
+        return false
+    }
+    const dateValue = localValue.split("T")[0]
+    const cached = stationSlotsCache[stationSlotsCacheKey(station, dateValue)]
+    if(!cached || !Array.isArray(cached.slots)){
+        return null
+    }
+    const slot = findSlotInAvailability(cached.slots, localValue)
+    if(!slot){
+        return false
+    }
+    return Boolean(slot.available)
+}
+
+async function isBookingSlotAvailable(station, bookingTimeValue){
+    const localValue = normalizeSlotTimeKey(bookingTimeValue)
+    if(!station || !localValue){
+        return false
+    }
+    const cachedResult = isSlotAvailableInCache(station, localValue)
+    if(cachedResult === false){
+        return false
+    }
+
+    const dateValue = localValue.split("T")[0]
+    const data = await fetchStationSlots(station, dateValue)
+    if(!data || !Array.isArray(data.slots)){
+        return cachedResult
+    }
+    const slot = findSlotInAvailability(data.slots, localValue)
+    if(!slot){
+        return false
+    }
+    return Boolean(slot.available)
+}
+
+function applyFirstAvailableSlotToBooking(station){
+    if(!station){
+        return false
+    }
+    const dateValue = getStationSlotDate(station)
+    const cached = stationSlotsCache[stationSlotsCacheKey(station, dateValue)]
+    if(!cached || !Array.isArray(cached.slots)){
+        return false
+    }
+    const firstAvailable = getAvailableSlotsFromList(cached.slots)[0]
+    if(!firstAvailable){
+        return false
+    }
+
+    const localValue = toDatetimeLocalFromSlot(firstAvailable.time)
+    if(localValue.includes("T")){
+        setStationSlotDate(station, localValue.split("T")[0])
+        setStationSlotTime(station, localValue.split("T")[1])
+    }
+    document.getElementById("booking_time").value = localValue
+    selectedBookingSlot = {
+        stationKey: stationLocationKey(station),
+        bookingTime: localValue
+    }
+    return true
+}
+
 function formatSlotPickerToggleLabel(station, index){
     const stationKey = stationLocationKey(station)
     if(
@@ -1202,9 +1520,25 @@ function formatStationSlotDateLabel(dateValue){
     })
 }
 
+function formatStationSlotButtonLabel(station){
+    if(hasSelectedSlotForStation(station) && selectedBookingSlot.bookingTime){
+        return formatSlotLabelFromTime(selectedBookingSlot.bookingTime)
+    }
+    return t("pickDateAndTime")
+}
+
 function formatCombinedSlotsButtonMeta(station){
-    const countText = formatSlotPickerMeta(station)
-    return `${t("availableSlotsBtn")} · ${countText}`
+    const datePart = formatStationSlotDateLabel(getStationSlotDate(station))
+    if(hasSelectedSlotForStation(station)){
+        return t("tapToChangeTime")
+    }
+    const cacheKey = stationSlotsCacheKey(station, getStationSlotDate(station))
+    const cached = stationSlotsCache[cacheKey]
+    const count = cached ? getAvailableSlotsFromList(cached.slots).length : Number(station.available_slots ?? 0)
+    if(count > 0){
+        return t("slotsAvailableOnDate", { count: count, date: datePart })
+    }
+    return t("noSlotsOnDate", { date: datePart })
 }
 
 function formatSlotPickerMeta(station){
@@ -1215,6 +1549,18 @@ function formatSlotPickerMeta(station){
         return t("slotsFree", { count: count })
     }
     return t("noSlotsForDate")
+}
+
+function renderSlotPickerMenuHeader(){
+    return `
+        <div class="slot-picker-menu-header">
+            <strong>${t("slotPickerTitle")}</strong>
+            <p>${t("slotPickerHint")}</p>
+            <div class="slot-picker-legend" aria-hidden="true">
+                <span class="legend-available">${t("slotLegendAvailable")}</span>
+                <span class="legend-taken">${t("slotLegendTaken")}</span>
+            </div>
+        </div>`
 }
 
 function renderSlotPickerMenuMarkup(station, index, slots){
@@ -1250,7 +1596,10 @@ function renderSlotPickerMenuMarkup(station, index, slots){
         const disabledAttr = slot.available ? "" : " disabled"
         const statusHint = slot.booked ? t("slotBooked") : (slot.past ? t("slotPast") : "")
         const titleAttr = statusHint ? ` title="${statusHint}"` : ""
-        return `<button type="button" class="${slotClass}" data-station-index="${index}" data-slot-time="${slot.time}"${disabledAttr}${titleAttr}>${slot.label}</button>`
+        const statusMarkup = statusHint
+            ? `<span class="slot-status-label">${statusHint}</span>`
+            : ""
+        return `<button type="button" class="${slotClass}" data-station-index="${index}" data-slot-time="${slot.time}"${disabledAttr}${titleAttr}><span class="slot-time-label">${slot.label}</span>${statusMarkup}</button>`
     }).join("")
 }
 
@@ -1302,7 +1651,7 @@ function updateSlotPickerUi(station, index){
         meta.innerText = formatSlotPickerMeta(station)
     }
     if(slotsLabel){
-        slotsLabel.innerText = formatStationSlotDateLabel(getStationSlotDate(station))
+        slotsLabel.innerText = formatStationSlotButtonLabel(station)
     }
     if(slotsMeta){
         slotsMeta.innerText = formatCombinedSlotsButtonMeta(station)
@@ -1341,29 +1690,21 @@ async function onStationSlotDateChange(index, dateValue){
 }
 
 async function loadStationSlotButtons(station, index){
-    const card = document.querySelector(`.station-card[data-station-key="${CSS.escape(stationLocationKey(station))}"]`)
-    if(!card){
-        return
-    }
-    const timesContainer = stationSlotsTimesContainer(card)
-    if(!timesContainer){
-        return
-    }
-
     const dateValue = getStationSlotDate(station)
-    timesContainer.innerHTML = `<p class="station-slot-empty">${t("slotLoading")}</p>`
     const data = await fetchStationSlots(station, dateValue)
     if(!data){
-        timesContainer.innerHTML = `<p class="station-slot-empty">${t("bookingFailed")}</p>`
         updateSlotPickerUi(station, index)
         return
     }
 
     station.total_slots = data.total_slots
     station.available_slots = data.available_slots
-    timesContainer.innerHTML = renderSlotPickerMenuMarkup(station, index, data.slots)
     updateSlotPickerUi(station, index)
 
+    const card = document.querySelector(`.station-card[data-station-key="${CSS.escape(stationLocationKey(station))}"]`)
+    if(!card){
+        return
+    }
     const badge = card.querySelector(".station-slot-badge")
     if(badge){
         badge.className = stationSlotBadgeClass(station)
@@ -1384,9 +1725,15 @@ function clearStationSlotsCache(){
     })
 }
 
-function selectStationSlot(index, slotTime){
+function selectStationSlot(index, slotTime, options){
     const station = latestStations[index]
     if(!station || !slotTime){
+        return
+    }
+
+    const slotAvailability = isSlotAvailableInCache(station, slotTime)
+    if(slotAvailability === false){
+        setBookingStatus(t("slotAlreadyBooked"))
         return
     }
 
@@ -1401,29 +1748,49 @@ function selectStationSlot(index, slotTime){
         stationKey: stationLocationKey(station),
         bookingTime: localValue
     }
-    document.getElementById("selected_station_name").innerText = station.station_name
-    document.getElementById("selected_station_address").innerText = `Address: ${displayStationAddress(station)} — ${formatSlotLabelFromTime(slotTime)}`
-    document.getElementById("booking_time").value = localValue
-    document.getElementById("booking_status").innerText = ""
+    const timeInput = document.getElementById("booking_time")
+    if(timeInput){
+        timeInput.value = localValue
+    }
     updateBookingTotal()
     closeAllSlotPickers()
     updateSlotPickerUi(station, index)
     renderStations(latestStations)
 }
 
+function applySlotSelectionFromWindow(payload){
+    if(!payload || !payload.slotTime){
+        return
+    }
+
+    let index = Number(payload.stationIndex)
+    if(payload.stationKey){
+        const foundIndex = latestStations.findIndex(function(station){
+            return stationLocationKey(station) === payload.stationKey
+        })
+        if(foundIndex >= 0){
+            index = foundIndex
+        }
+    }
+
+    const station = latestStations[index]
+    if(station && payload.slotDate){
+        setStationSlotDate(station, payload.slotDate)
+    }
+
+    if(payload.slot_count != null){
+        setSelectedBookingSlotCount(payload.slot_count)
+    }
+    selectStationSlot(index, payload.slotTime, { skipScroll: true })
+    localStorage.removeItem("pendingSlotPick")
+    localStorage.removeItem("selectedSlotPick")
+}
+
 function updateSelectedStationSummary(){
     if(!selectedStation){
         return
     }
-    const bookingValue = document.getElementById("booking_time").value
-    document.getElementById("selected_station_name").innerText = selectedStation.station_name
-    if(isValidBookingTime(bookingValue)){
-        document.getElementById("selected_station_address").innerText = `Address: ${displayStationAddress(selectedStation)} — ${formatSlotLabelFromTime(bookingValue)}`
-        document.getElementById("booking_status").innerText = ""
-    }
-    else{
-        document.getElementById("selected_station_address").innerText = `Address: ${displayStationAddress(selectedStation)} — ${t("bookAtYourTime")}`
-    }
+    setBookingStatus("")
 }
 
 async function loadStationSlotConfig(){
@@ -1433,7 +1800,9 @@ async function loadStationSlotConfig(){
             return
         }
         const data = await response.json()
+        applyBookingPricingConfig(data)
         stationSlotLimit = Number(data.station_slot_limit) || stationSlotLimit
+        bookingSlotIntervalMinutes = Number(data.booking_slot_interval_minutes) || 30
         maxBookingDate = data.max_booking_date || ""
         bookingOpenHour = Number(data.booking_open_hour) || bookingOpenHour
         bookingCloseHour = Number(data.booking_close_hour) || bookingCloseHour
@@ -1564,6 +1933,113 @@ function mergeUniqueStations(existingStations, newStations){
     return merged
 }
 
+function scrollToBookingPanel(){
+    const stations = document.getElementById("stations")
+    if(stations && typeof stations.scrollIntoView === "function"){
+        stations.scrollIntoView({ behavior: "smooth", block: "start" })
+    }
+}
+
+function openSlotPickerWindow(index){
+    const station = latestStations[index]
+    if(!station){
+        return
+    }
+
+    const payload = {
+        stationIndex: index,
+        stationKey: stationLocationKey(station),
+        station: {
+            station_name: station.station_name,
+            station_address: station.station_address,
+            distance: station.distance,
+            service_charge: station.service_charge,
+            latitude: station.latitude,
+            longitude: station.longitude,
+            google_maps_url: station.google_maps_url
+        },
+        slotDate: getStationSlotDate(station),
+        selectedTime: hasSelectedSlotForStation(station) ? selectedBookingSlot.bookingTime : null
+    }
+    localStorage.setItem("pendingSlotPick", JSON.stringify(payload))
+
+    const width = 560
+    const height = 720
+    const left = Math.max(0, Math.round((window.screen.width - width) / 2))
+    const top = Math.max(0, Math.round((window.screen.height - height) / 2))
+    const features = [
+        "popup=yes",
+        `width=${width}`,
+        `height=${height}`,
+        `left=${left}`,
+        `top=${top}`,
+        "resizable=yes",
+        "scrollbars=yes"
+    ].join(",")
+
+    window.open("/pick-slot.html", "evPickSlot", features)
+}
+
+function canUserBookStation(stationName){
+    const station = latestStations.find(function(entry){
+        return String(entry.station_name || "").trim().toLowerCase()
+            === String(stationName || "").trim().toLowerCase()
+    })
+    if(station && hasUserActiveBookingForStation(station)){
+        return { ok: false, message: t("stationAlreadyBookedByYou") }
+    }
+    return { ok: true }
+}
+
+function proceedToBookingFromSlotPick(payload){
+    applySlotSelectionFromWindow(payload)
+    if(!selectedStation){
+        return { ok: false, message: "Station is no longer on the dashboard. Refresh and try again." }
+    }
+    if(hasUserActiveBookingForStation(selectedStation)){
+        return { ok: false, message: t("stationAlreadyBookedByYou") }
+    }
+    openBookingWindow()
+    return { ok: true }
+}
+
+function openBookingWindow(){
+    if(!selectedStation){
+        return
+    }
+
+    if(hasUserActiveBookingForStation(selectedStation)){
+        setBookingStatus(t("stationAlreadyBookedByYou"))
+        return
+    }
+
+    if(!hasSelectedSlotForStation(selectedStation)){
+        applyStationScheduleToBooking(selectedStation)
+    }
+    updateBookingTotal()
+    const payload = defaultBookingPayload(selectedStation)
+    localStorage.setItem("pendingBookingDraft", JSON.stringify(payload))
+
+    const width = 520
+    const height = 760
+    const left = Math.max(0, Math.round((window.screen.width - width) / 2))
+    const top = Math.max(0, Math.round((window.screen.height - height) / 2))
+    const features = [
+        "popup=yes",
+        `width=${width}`,
+        `height=${height}`,
+        `left=${left}`,
+        `top=${top}`,
+        "resizable=yes",
+        "scrollbars=yes"
+    ].join(",")
+
+    const bookingWindow = window.open("/book-slot.html", "evBookSlot", features)
+    if(!bookingWindow){
+        setBookingStatus("Allow pop-ups for this site to open the booking page.")
+    }
+}
+
 function scrollToStationCard(index){
     const cards = document.querySelectorAll(".station-card")
     const target = cards[index] || cards[cards.length - 1]
@@ -1585,14 +2061,18 @@ function setSeeMoreLoading(isLoading){
 
 function renderStations(stations){
     const visibleStations = stations.slice(0, visibleStationCount)
-    document.getElementById("station_count").innerText = visibleStations.length
-    document.getElementById("see_more_btn").style.display = stations.length > 0 ? "inline-flex" : "none"
+    document.getElementById("station_count").innerText = String(stations.length)
+    const seeMoreButton = document.getElementById("see_more_btn")
+    if(seeMoreButton){
+        seeMoreButton.style.display = stations.length > visibleStationCount ? "flex" : "none"
+    }
 
     if(visibleStations.length === 0){
         document.getElementById("stations").innerHTML = `
             <div class="empty-state station-empty-state">
                 <p class="station-empty-title">${t("noStations")}</p>
                 <p class="station-empty-hint">${t("searchStationsHint")}</p>
+                <p class="station-empty-hint">Use <strong>http://127.0.0.1:8000/dashboard.html</strong> (not a file or other port).</p>
                 <div class="station-empty-actions">
                     <button type="button" class="search-btn" onclick="searchStationsByLocation('Coimbatore','')">${t("promptStationsQuery")}</button>
                     <button type="button" class="outline-button" onclick="showNearestStations()">${t("showNearest")}</button>
@@ -1602,19 +2082,20 @@ function renderStations(stations){
         return
     }
 
-    const chargerType = document.getElementById("booking_charger").value
-    const unitRate = getChargerUnitRate(chargerType)
-    const maxDate = maxBookingDate || ""
     document.getElementById("stations").innerHTML = visibleStations.map(function(station, index){
+        try{
         const selectedClass = selectedStation === station ? " selected" : ""
         const mapsUrl = makeStationMapsUrl(station)
-        const slotDate = getStationSlotDate(station)
-        const cacheKey = stationSlotsCacheKey(station, slotDate)
-        const cachedSlots = stationSlotsCache[cacheKey]
-        const slotsMeta = formatSlotPickerMeta(station)
-        const menuMarkup = cachedSlots
-            ? renderSlotPickerMenuMarkup(station, index, cachedSlots.slots)
-            : `<p class="station-slot-empty">${t("slotLoading")}</p>`
+        const slotReady = hasSelectedSlotForStation(station)
+        const alreadyBooked = hasUserActiveBookingForStation(station)
+        const slotButtonClass = `station-slots-button station-slots-combo-button slot-picker-open${slotReady ? " has-slot-selected" : ""}`
+        const bookButtonClass = `book-button station-book-button icon-button${slotReady && !alreadyBooked ? " ready" : ""}${alreadyBooked ? " already-booked" : ""}`
+        const bookButtonTitle = alreadyBooked
+            ? t("stationAlreadyBookedByYou")
+            : (slotReady ? t("openBookSlotHint") : t("selectSlotFirst"))
+        const bookButtonLabel = alreadyBooked ? t("alreadyBooked") : t("book")
+        const slotLabel = formatStationSlotButtonLabel(station)
+        const slotMeta = formatCombinedSlotsButtonMeta(station)
         return `
             <article class="station-card station-row booking-row reveal${selectedClass}" data-station-key="${stationLocationKey(station)}" data-station-index="${index}">
                 <div class="station-details booking-details">
@@ -1626,32 +2107,33 @@ function renderStations(stations){
                             <span>Google Maps</span>
                         </a>
                         <div class="station-slots-wrap">
-                            <button type="button" class="station-slots-button station-slots-combo-button slot-picker-toggle" data-station-index="${index}" aria-expanded="false" aria-haspopup="dialog" aria-label="${t("dateSlotsBtn")}">
-                                <span class="slots-button-label">${formatStationSlotDateLabel(slotDate)}</span>
-                                <span class="slots-button-meta">${formatCombinedSlotsButtonMeta(station)}</span>
+                            <button type="button" class="${slotButtonClass}" data-station-index="${index}" title="${t("openSlotPickerWindowHint")}" aria-label="${t("dateSlotsBtn")}: ${slotLabel}">
+                                <span class="slots-button-label">${slotLabel}</span>
+                                <span class="slots-button-meta">${slotMeta}</span>
                             </button>
-                            <div class="slot-picker-menu station-slots-menu" hidden role="dialog">
-                                <div class="station-slots-menu-toolbar">
-                                    <label class="station-slots-menu-date-label">
-                                        <span>${t("pickDate")}</span>
-                                        <input type="date" class="station-slot-date" data-station-index="${index}" value="${slotDate}" min="${defaultSlotDateString()}" max="${maxDate}" aria-label="${t("pickDate")}">
-                                    </label>
-                                </div>
-                                <div class="station-slots-times" role="listbox">${menuMarkup}</div>
-                            </div>
                         </div>
-                        <button type="button" class="book-button station-book-button icon-button" data-station-index="${index}">
+                        <button type="button" class="${bookButtonClass}" data-station-index="${index}" ${alreadyBooked ? "disabled" : ""} title="${bookButtonTitle}">
                             <span class="button-icon">${icons.confirm}</span>
-                            <span>${t("book")}</span>
+                            <span>${bookButtonLabel}</span>
                         </button>
                     </div>
-                    <span class="booking-meta station-meta">${station.distance} · ${chargerType} · Rs ${unitRate}/unit</span>
+                    <span class="booking-meta station-meta">${station.distance}</span>
                 </div>
-                <div class="station-price booking-price">
-                    <strong>${estimateStationPrice(station)}</strong>
-                </div>
+                ${renderStationPriceBlock(station)}
             </article>
         `
+        }
+        catch(renderError){
+            console.error("Failed to render station card", station, renderError)
+            return `
+            <article class="station-card station-row booking-row reveal" data-station-index="${index}">
+                <div class="station-details booking-details">
+                    <h3>${station.station_name || "EV Charging Station"}</h3>
+                    <p class="booking-address station-address">${displayStationAddress(station)}</p>
+                    <span class="booking-meta station-meta">${station.distance || ""}</span>
+                </div>
+            </article>`
+        }
     }).join("")
 
     closeAllSlotPickers()
@@ -1663,9 +2145,7 @@ function renderStations(stations){
 function setBookingPanelEmpty(){
     selectedStation = null
     selectedBookingSlot = null
-    document.getElementById("selected_station_name").innerText = t("chooseStation")
-    document.getElementById("selected_station_address").innerText = t("chooseStationHelp")
-    document.getElementById("booking_status").innerText = ""
+    setBookingStatus("")
 }
 
 function selectStation(index){
@@ -1674,26 +2154,47 @@ function selectStation(index){
         return
     }
 
+    if(hasUserActiveBookingForStation(station)){
+        setBookingStatus(t("stationAlreadyBookedByYou"))
+        return
+    }
+
     selectedStation = station
     applyStationScheduleToBooking(station)
-    updateSelectedStationSummary()
+    setBookingStatus("")
+
+    if(!hasSelectedSlotForStation(station)){
+        openSlotPickerWindow(index)
+        return
+    }
+
     renderStations(latestStations)
     updateBookingTotal()
+    openBookingWindow()
 }
 
 function updateBookingTotal(){
-    const units = Number(document.getElementById("booking_units").value || 0)
-    const chargerType = document.getElementById("booking_charger").value
-    const total = calculateBookingPrice(units, chargerType)
-    document.getElementById("booking_total").innerText = money(total)
-    document.getElementById("payment_estimate").innerText = money(total)
+    if(!selectedStation){
+        return
+    }
+    const units = getSelectedBookingUnits()
+    const slotCount = getSelectedBookingSlotCount()
+    const chargerEl = document.getElementById("booking_charger")
+    const chargerType = chargerEl?.value || "Fast DC"
+    const total = calculateBookingBreakdown(selectedStation, units, chargerType, slotCount).total
+    const paymentEstimate = document.getElementById("payment_estimate")
+    if(paymentEstimate){
+        paymentEstimate.innerText = money(total)
+    }
 }
 
 function defaultBookingPayload(station, unitsOverride, chargerTypeOverride){
     const units = unitsOverride != null
-        ? Number(unitsOverride)
-        : Number(document.getElementById("booking_units").value || 10)
+        ? getBookingUnits(unitsOverride)
+        : getSelectedBookingUnits()
+    const slotCount = getSelectedBookingSlotCount()
     const chargerType = chargerTypeOverride || document.getElementById("booking_charger").value
+    const pricing = calculateBookingBreakdown(station, units, chargerType, slotCount)
     return {
         username: username,
         station_name: station.station_name,
@@ -1704,14 +2205,67 @@ function defaultBookingPayload(station, unitsOverride, chargerTypeOverride){
         distance: station.distance,
         booking_time: document.getElementById("booking_time").value,
         charger_type: chargerType,
-        units: units,
-        price: calculateBookingPrice(units, chargerType)
+        units: pricing.units,
+        subtotal: pricing.subtotal,
+        service_charge: pricing.service_charge,
+        price: pricing.total,
+        slot_count: slotCount
     }
 }
 
 function clearAssistantBookingDraft(){
     assistantBookingDraft = null
     updateAssistantBookingActions()
+}
+
+function clearAssistantCostDraft(){
+    assistantCostDraft = null
+}
+
+function askAssistantBookingUnits(station){
+    return t("askBookingUnits", { station: station?.station_name || "this station" })
+}
+
+function askAssistantBookingCharger(station){
+    return `${t("askBookingCharger", { station: station?.station_name || "this station" })}\n\n${formatAssistantChargerOptions()}`
+}
+
+function formatSlotDurationLabel(slotCount){
+    return getBookingSlotCount(slotCount) >= 2 ? t("duration60") : t("duration30")
+}
+
+function formatAssistantSlotDurationOptions(){
+    return [
+        { index: 1, label: t("duration30") },
+        { index: 2, label: t("duration60") },
+    ].map(function(option){
+        return t("slotDurationOptionLine", option)
+    }).join("\n")
+}
+
+function askAssistantBookingSlotDuration(station){
+    return `${t("askBookingSlotDuration", { station: station?.station_name || "this station" })}\n\n${formatAssistantSlotDurationOptions()}`
+}
+
+function getNextAssistantBookingPrompt(draft){
+    if(!draft || draft.stationIndex == null){
+        return null
+    }
+
+    const station = latestStations[draft.stationIndex]
+    if(draft.units == null){
+        return askAssistantBookingUnits(station)
+    }
+    if(!draft.chargerType){
+        return askAssistantBookingCharger(station)
+    }
+    if(draft.slotCount == null){
+        return askAssistantBookingSlotDuration(station)
+    }
+    if(!draft.bookingTime){
+        return askAssistantBookingDateTime()
+    }
+    return null
 }
 
 function canCompleteAssistantBooking(){
@@ -1721,6 +2275,7 @@ function canCompleteAssistantBooking(){
         && draft.stationIndex != null
         && draft.units != null
         && draft.chargerType
+        && draft.slotCount != null
         && draft.bookingTime
         && isValidBookingTime(draft.bookingTime)
     )
@@ -1743,6 +2298,9 @@ function buildAssistantBookingSummary(){
     if(draft.chargerType){
         parts.push(draft.chargerType)
     }
+    if(draft.slotCount != null){
+        parts.push(formatSlotDurationLabel(draft.slotCount))
+    }
     if(draft.bookingTime){
         parts.push(formatSlotLabelFromTime(draft.bookingTime))
     }
@@ -1751,34 +2309,42 @@ function buildAssistantBookingSummary(){
 
 function updateAssistantBookingActions(){
     const bar = document.getElementById("assistant_booking_actions")
-    const confirmButton = document.getElementById("assistant_confirm_booking_btn")
     const bookButton = document.getElementById("assistant_book_slot_btn")
     const hint = document.getElementById("assistant_booking_hint")
-    if(!bar || !confirmButton){
+    if(!bar || !bookButton){
         return
     }
 
     if(!assistantBookingDraft || assistantBookingDraft.stationIndex == null){
         bar.hidden = true
-        confirmButton.disabled = true
-        if(bookButton){
-            bookButton.disabled = true
-        }
+        bookButton.disabled = true
         return
     }
 
     bar.hidden = false
+    const draft = assistantBookingDraft
     const summary = buildAssistantBookingSummary()
     if(hint){
-        hint.innerText = canCompleteAssistantBooking()
-            ? t("assistantBookingReady", { summary: summary })
-            : (summary || t("assistantConfirmHint"))
+        if(canCompleteAssistantBooking()){
+            hint.innerText = t("assistantBookingReadyBookSlot", { summary: summary })
+        }
+        else if(!draft.units){
+            hint.innerText = t("assistantMissingUnits")
+        }
+        else if(!draft.chargerType){
+            hint.innerText = t("assistantMissingCharger")
+        }
+        else if(draft.slotCount == null){
+            hint.innerText = t("assistantMissingSlotDuration")
+        }
+        else if(!draft.bookingTime){
+            hint.innerText = t("assistantMissingTime")
+        }
+        else{
+            hint.innerText = summary || t("assistantBookSlotHint")
+        }
     }
-    confirmButton.disabled = !canCompleteAssistantBooking()
-    confirmButton.title = confirmButton.disabled ? t("assistantConfirmHint") : ""
-    if(bookButton){
-        bookButton.disabled = false
-    }
+    bookButton.disabled = !canCompleteAssistantBooking()
 }
 
 async function assistantConfirmBookingClick(){
@@ -1787,29 +2353,39 @@ async function assistantConfirmBookingClick(){
         return
     }
 
-    const reply = await completeAssistantBooking()
+    const paymentWindow = openPaymentWindowBlank()
+    const reply = await completeAssistantBooking({ paymentWindow: paymentWindow })
     if(reply){
         addChatMessage("assistant", reply)
     }
     updateAssistantBookingActions()
 }
 
-function assistantBookSlotClick(){
+async function assistantBookSlotClick(){
     const draft = assistantBookingDraft
     if(!draft || draft.stationIndex == null){
         addChatMessage("assistant", t("pickStation"))
         return
     }
 
+    if(!canCompleteAssistantBooking()){
+        const prompt = getNextAssistantBookingPrompt(draft)
+            || (await continueAssistantBookingDraft(""))
+        if(prompt){
+            addChatMessage("assistant", prompt)
+        }
+        updateAssistantBookingActions()
+        return
+    }
+
     selectStationForAssistant(draft.stationIndex)
     syncAssistantDraftToForm(draft)
-    updateSelectedStationSummary()
-    activateView("stations")
-    addChatMessage("assistant", t("stationSelected", {
-        station: latestStations[draft.stationIndex].station_name,
-        distance: latestStations[draft.stationIndex].distance,
-        number: draft.stationIndex + 1
-    }))
+    const paymentWindow = openPaymentWindowBlank()
+    const reply = await completeAssistantBooking({ paymentWindow: paymentWindow })
+    if(reply){
+        addChatMessage("assistant", reply)
+    }
+    updateAssistantBookingActions()
 }
 
 function formatAssistantChargerOptions(){
@@ -1817,9 +2393,34 @@ function formatAssistantChargerOptions(){
         return t("chargerOptionLine", {
             index: index + 1,
             type: chargerType,
-            rate: getChargerUnitRate(chargerType)
+            rate: slotRateForCharger(chargerType)
         })
     }).join("\n")
+}
+
+function extractSlotCountFromMessage(message){
+    const text = String(message || "").trim().toLowerCase()
+    if(!text){
+        return null
+    }
+    if(/\b(1\s*hour|one\s*hour|60\s*min|2\s*slots?)\b/i.test(text)){
+        return 2
+    }
+    if(/\b(30\s*min|half\s*hour|1\s*slot)\b/i.test(text)){
+        return 1
+    }
+    const patterns = [
+        /^([12])$/,
+        /\b([12])\s*slots?\b/i,
+        /\b([12])\s*(?:hour|hr|hours)\b/i,
+    ]
+    for(const pattern of patterns){
+        const match = text.match(pattern)
+        if(match && match[1]){
+            return getBookingSlotCount(match[1])
+        }
+    }
+    return null
 }
 
 function extractUnitsFromMessage(message){
@@ -1827,14 +2428,14 @@ function extractUnitsFromMessage(message){
     const patterns = [
         /\b(\d{1,3})\s*(?:charging\s*)?units?\b/i,
         /\bunits?\s*[:=]?\s*(\d{1,3})\b/i,
-        /^(\d{1,3})$/,
+        /^(\d{1,3})$/
     ]
 
     for(const pattern of patterns){
         const match = text.match(pattern)
         if(match && match[1]){
             const units = Number(match[1])
-            if(units >= 1 && units <= 200){
+            if(units >= MIN_BOOKING_UNITS && units <= MAX_BOOKING_UNITS){
                 return units
             }
         }
@@ -1843,19 +2444,31 @@ function extractUnitsFromMessage(message){
     return null
 }
 
-function extractChargerTypeFromMessage(message){
+function extractChargerTypeFromMessage(message, options){
     const text = String(message || "").trim().toLowerCase()
     if(!text){
         return null
     }
 
-    if(/^3$/.test(text) || /ultra\s*fast|ultrafast/.test(text)){
+    const allowNumericChoice = options?.allowNumericChoice !== false
+
+    if(allowNumericChoice && /^3$/.test(text)){
         return "Ultra Fast"
     }
-    if(/^2$/.test(text) || /fast\s*dc/.test(text) || (/\bfast\b/.test(text) && !/ultra/.test(text)) || /\bdc\b/.test(text)){
+    if(allowNumericChoice && /^2$/.test(text)){
         return "Fast DC"
     }
-    if(/^1$/.test(text) || /ac\s*charg|\bac\b/.test(text)){
+    if(allowNumericChoice && /^1$/.test(text)){
+        return "AC Charger"
+    }
+
+    if(/ultra\s*fast|ultrafast/.test(text)){
+        return "Ultra Fast"
+    }
+    if(/fast\s*dc/.test(text) || (/\bfast\b/.test(text) && !/ultra/.test(text)) || /\bdc\b/.test(text)){
+        return "Fast DC"
+    }
+    if(/ac\s*charg|\bac\b/.test(text)){
         return "AC Charger"
     }
 
@@ -2092,7 +2705,7 @@ function syncBookingFormValues(units, chargerType, bookingTime){
     const chargerSelect = document.getElementById("booking_charger")
     const timeInput = document.getElementById("booking_time")
     if(unitsInput){
-        unitsInput.value = String(units)
+        unitsInput.value = String(getBookingUnits(units))
     }
     if(chargerSelect){
         chargerSelect.value = chargerType
@@ -2103,13 +2716,13 @@ function syncBookingFormValues(units, chargerType, bookingTime){
     updateBookingTotal()
 }
 
-async function completeAssistantBooking(){
+async function completeAssistantBooking(options){
     const draft = assistantBookingDraft
     if(!draft || draft.stationIndex == null){
         return t("noStationsToPick")
     }
 
-    if(draft.units == null || !draft.chargerType || !draft.bookingTime){
+    if(draft.units == null || !draft.chargerType || draft.slotCount == null || !draft.bookingTime){
         return await continueAssistantBookingDraft("")
     }
 
@@ -2124,6 +2737,17 @@ async function completeAssistantBooking(){
         return assistantBookingTimeError()
     }
 
+    if(hasUserActiveBookingForStation(station)){
+        closePaymentWindow(options && options.paymentWindow)
+        return t("bookingFailedAssistant", { reason: t("stationAlreadyBookedByYou") })
+    }
+
+    const slotAvailable = await isBookingSlotAvailable(station, draft.bookingTime)
+    if(slotAvailable === false){
+        closePaymentWindow(options && options.paymentWindow)
+        return t("bookingFailedAssistant", { reason: t("slotAlreadyBooked") })
+    }
+
     syncAssistantDraftToForm(draft)
     const payload = defaultBookingPayload(selectedStation, draft.units, draft.chargerType)
     const data = await saveBooking(payload)
@@ -2133,13 +2757,19 @@ async function completeAssistantBooking(){
     clearAssistantBookingDraft()
 
     if(!data.booking_id){
+        closePaymentWindow(options && options.paymentWindow)
         return t("bookingFailedAssistant", { reason: data.message || "Booking was not created" })
     }
 
     await refreshStationSlotAvailability()
-    schedulePaymentRedirect(payload, 2000)
+    payload.booking_id = data.booking_id
+    openPaymentPage(payload, options && options.paymentWindow)
     updateAssistantBookingActions()
-    return buildBookingSuccessMessage(payload)
+    return `${t("bookingSuccess", {
+        station: payload.station_name,
+        time: formatBookingTimeEnglish(payload.booking_time),
+        price: money(payload.price)
+    })} ${t("redirectingToPayment")}`
 }
 
 async function continueAssistantBookingDraft(input){
@@ -2155,7 +2785,12 @@ async function continueAssistantBookingDraft(input){
     }
 
     const parsedUnits = extractUnitsFromMessage(input)
-    const parsedCharger = extractChargerTypeFromMessage(input)
+    const parsedCharger = extractChargerTypeFromMessage(input, {
+        allowNumericChoice: draft.units != null && draft.chargerType == null
+    })
+    const parsedSlotCount = (draft.chargerType || parsedCharger) && draft.slotCount == null
+        ? extractSlotCountFromMessage(input)
+        : null
     const parsedDateTime = extractBookingDateTimeFromMessage(input)
 
     if(draft.units == null && parsedUnits != null){
@@ -2163,6 +2798,9 @@ async function continueAssistantBookingDraft(input){
     }
     if(draft.chargerType == null && parsedCharger != null){
         draft.chargerType = parsedCharger
+    }
+    if(draft.slotCount == null && parsedSlotCount != null){
+        draft.slotCount = parsedSlotCount
     }
     if(draft.bookingTime == null && parsedDateTime != null){
         draft.bookingTime = parsedDateTime
@@ -2175,24 +2813,33 @@ async function continueAssistantBookingDraft(input){
 
     if(draft.units == null){
         if(parsedCharger != null || parsedDateTime != null){
-            return t("askBookingUnits", { station: station.station_name })
+            return askAssistantBookingUnits(station)
         }
         return input.trim()
             ? t("invalidBookingUnits")
-            : t("askBookingUnits", { station: station.station_name })
+            : askAssistantBookingUnits(station)
     }
 
     if(draft.chargerType == null){
         if(parsedUnits != null && parsedCharger == null){
-            return `${t("askBookingCharger")}\n\n${formatAssistantChargerOptions()}`
+            return askAssistantBookingCharger(station)
         }
         return input.trim()
             ? `${t("invalidBookingCharger")}\n\n${formatAssistantChargerOptions()}`
-            : `${t("askBookingCharger")}\n\n${formatAssistantChargerOptions()}`
+            : askAssistantBookingCharger(station)
+    }
+
+    if(draft.slotCount == null){
+        if(parsedDateTime != null && parsedSlotCount == null){
+            return askAssistantBookingSlotDuration(station)
+        }
+        return input.trim()
+            ? `${t("invalidBookingSlotDuration")}\n\n${formatAssistantSlotDurationOptions()}`
+            : askAssistantBookingSlotDuration(station)
     }
 
     if(draft.bookingTime == null){
-        if(parsedUnits != null || parsedCharger != null){
+        if(parsedUnits != null || parsedCharger != null || parsedSlotCount != null){
             return askAssistantBookingDateTime()
         }
         return input.trim()
@@ -2200,6 +2847,8 @@ async function continueAssistantBookingDraft(input){
             : askAssistantBookingDateTime()
     }
 
+    syncAssistantDraftToForm(draft)
+    updateAssistantBookingActions()
     return await completeAssistantBooking()
 }
 
@@ -2217,16 +2866,20 @@ async function startAssistantBooking(index, input){
     applyStationScheduleToBooking(station)
     assistantAwaitingStationPick = false
     pendingBookingRequest = false
-    assistantBookingDraft = { stationIndex: index, units: null, chargerType: null, bookingTime: null }
+    assistantBookingDraft = { stationIndex: index, units: null, chargerType: null, slotCount: null, bookingTime: null }
 
     const parsedUnits = extractUnitsFromMessage(input || "")
-    const parsedCharger = extractChargerTypeFromMessage(input || "")
+    const parsedCharger = extractChargerTypeFromMessage(input || "", { allowNumericChoice: false })
+    const parsedSlotCount = parsedCharger ? extractSlotCountFromMessage(input || "") : null
     const parsedDateTime = extractBookingDateTimeFromMessage(input || "")
     if(parsedUnits != null){
         assistantBookingDraft.units = parsedUnits
     }
     if(parsedCharger != null){
         assistantBookingDraft.chargerType = parsedCharger
+    }
+    if(parsedSlotCount != null){
+        assistantBookingDraft.slotCount = parsedSlotCount
     }
     if(parsedDateTime != null){
         assistantBookingDraft.bookingTime = parsedDateTime
@@ -2237,10 +2890,11 @@ async function startAssistantBooking(index, input){
     return await continueAssistantBookingDraft("")
 }
 
-function shouldAbortAssistantBookingDraft(normalized, listIntent, requestedCity, requestedPincode){
+function shouldAbortAssistantBookingDraft(normalized, listIntent, requestedCity, requestedPincode, listBookingsIntent){
     return hasHelpIntent(normalized)
         || hasAny(normalized, ["cancel", "ரத்து", "रद्द"])
         || listIntent
+        || listBookingsIntent
         || Boolean(requestedCity || requestedPincode)
 }
 
@@ -2262,19 +2916,67 @@ function buildBookingSuccessMessage(payload){
     })}\n${t("redirectingToPayment")}`
 }
 
-function schedulePaymentRedirect(payload, delayMs){
+function openPaymentWindowBlank(){
+    try{
+        return window.open("about:blank", "_blank", "noopener,noreferrer")
+    }
+    catch(error){
+        return null
+    }
+}
+
+function closePaymentWindow(paymentWindow){
+    if(paymentWindow && !paymentWindow.closed){
+        try{
+            paymentWindow.close()
+        }
+        catch(error){
+            console.log(error)
+        }
+    }
+}
+
+function openPaymentPage(payload, paymentWindow){
     const paymentEstimate = document.getElementById("payment_estimate")
     if(paymentEstimate){
         paymentEstimate.innerText = money(payload.price)
     }
     localStorage.setItem("tempBooking", JSON.stringify(payload))
-    window.setTimeout(function(){
-        window.location.href = "/payment.html"
-    }, delayMs || 2000)
+
+    const targetUrl = "/payment.html"
+    if(paymentWindow && !paymentWindow.closed){
+        try{
+            paymentWindow.location.href = targetUrl
+            paymentWindow.focus()
+            return true
+        }
+        catch(error){
+            console.log(error)
+        }
+    }
+
+    const popup = window.open(targetUrl, "_blank", "noopener,noreferrer")
+    if(popup){
+        popup.focus()
+        return true
+    }
+
+    window.location.href = targetUrl
+    return true
+}
+
+function schedulePaymentRedirect(payload, delayMs, paymentWindow){
+    if(delayMs > 0){
+        window.setTimeout(function(){
+            openPaymentPage(payload, paymentWindow)
+        }, delayMs)
+        return
+    }
+    openPaymentPage(payload, paymentWindow)
 }
 
 function goToPaymentPage(payload){
-    schedulePaymentRedirect(payload, 0)
+    openPaymentPage(payload)
 }
 
 function askAssistantBookingDateTime(){
@@ -2303,10 +3005,16 @@ function syncAssistantDraftToForm(draft){
 
     selectedStation = station
     if(draft.units != null){
-        document.getElementById("booking_units").value = String(draft.units)
+        const unitsInput = document.getElementById("booking_units")
+        if(unitsInput){
+            unitsInput.value = String(getBookingUnits(draft.units))
+        }
     }
     if(draft.chargerType){
         document.getElementById("booking_charger").value = draft.chargerType
+    }
+    if(draft.slotCount != null){
+        setSelectedBookingSlotCount(draft.slotCount)
     }
     if(draft.bookingTime){
         const localValue = toDatetimeLocalFromSlot(draft.bookingTime)
@@ -2333,6 +3041,11 @@ async function runBookingConfirmation(statusElement){
         return false
     }
 
+    if(hasUserActiveBookingForStation(selectedStation)){
+        status.innerText = t("stationAlreadyBookedByYou")
+        return false
+    }
+
     applyStationScheduleToBooking(selectedStation)
     const bookingTimeValue = document.getElementById("booking_time").value
     if(!isValidBookingTime(bookingTimeValue)){
@@ -2349,6 +3062,19 @@ async function runBookingConfirmation(statusElement){
         return false
     }
 
+    const slotAvailable = await isBookingSlotAvailable(selectedStation, bookingTimeValue)
+    if(slotAvailable === false){
+        status.innerText = t("slotAlreadyBooked")
+        await refreshStationSlotAvailability()
+        return false
+    }
+
+    const unitsError = bookingUnitsValidationMessage()
+    if(unitsError){
+        status.innerText = unitsError
+        return false
+    }
+
     status.innerText = t("saving")
     try{
         const payload = defaultBookingPayload(selectedStation)
@@ -2361,8 +3087,9 @@ async function runBookingConfirmation(statusElement){
         }
 
         await refreshStationSlotAvailability()
-        status.innerText = buildBookingSuccessMessage(payload)
-        schedulePaymentRedirect(payload, 2000)
+        payload.booking_id = data.booking_id
+        status.innerText = t("redirectingToPayment")
+        openPaymentPage(payload)
         return true
     }
     catch(error){
@@ -2391,6 +3118,40 @@ async function submitBooking(event){
     await runBookingConfirmation(document.getElementById("booking_status"))
 }
 
+async function refreshUserActiveBookings(){
+    try{
+        const response = await fetch(`/bookings/${encodeURIComponent(username)}`)
+        if(!response.ok){
+            userActiveBookings = []
+            return userActiveBookings
+        }
+        const data = await response.json()
+        userActiveBookings = Array.isArray(data) ? data : (data.active || [])
+        if(latestStations.length){
+            renderStations(latestStations)
+        }
+        return userActiveBookings
+    }
+    catch(error){
+        console.log(error)
+        userActiveBookings = []
+        return userActiveBookings
+    }
+}
+
+function hasUserActiveBookingForStation(station){
+    if(!station){
+        return false
+    }
+    const stationName = String(station.station_name || "").trim().toLowerCase()
+    if(!stationName){
+        return false
+    }
+    return userActiveBookings.some(function(booking){
+        return String(booking.station_name || "").trim().toLowerCase() === stationName
+    })
+}
+
 async function showBookings(){
     const bookingsPanel = document.getElementById("bookings")
     bookingsPanel.innerHTML = `<div class="empty-state">Loading bookings...</div>`
@@ -2404,7 +3165,11 @@ async function showBookings(){
         const data = await response.json()
         const activeBookings = Array.isArray(data) ? data : (data.active || [])
         const pastBookings = Array.isArray(data) ? [] : (data.past || [])
+        userActiveBookings = activeBookings
         document.getElementById("active_booking_count").innerText = activeBookings.length
+        if(latestStations.length){
+            renderStations(latestStations)
+        }
 
         if(activeBookings.length === 0 && pastBookings.length === 0){
             bookingsPanel.innerHTML = `<div class="empty-state">No bookings yet.</div>`
@@ -2464,6 +3229,16 @@ function makeBookingMapsUrl(booking){
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
 }
 
+function formatPaymentMethodLabel(method){
+    const labels = {
+        cash: "Cash",
+        credit_card: "Credit card",
+        debit_card: "Debit card",
+        gpay: "GPay"
+    }
+    return labels[method] || ""
+}
+
 function renderBookingCards(bookings, canCancel){
     if(bookings.length === 0){
         return `<div class="empty-state">${canCancel ? "No active bookings yet." : "No past bookings yet."}</div>`
@@ -2473,10 +3248,18 @@ function renderBookingCards(bookings, canCancel){
         const statusLabel = booking.status || "Booked"
         const rowClass = canCancel ? "active-booking" : "past-booking"
         const paymentStatus = booking.payment_status || "Pending"
+        const paymentMethodLabel = formatPaymentMethodLabel(booking.payment_method)
+        const paymentLabel = paymentStatus === "Paid"
+            ? (paymentMethodLabel ? `Paid · ${paymentMethodLabel}` : "Paid")
+            : "Payment Pending"
         const mapsUrl = makeBookingMapsUrl(booking)
+        const displayBreakdown = getBookingDisplayBreakdown(booking)
+        const unitsDetail = displayBreakdown.units > 0
+            ? `<span class="station-price-detail">${formatUnitsLineLabel(displayBreakdown.units, booking.charger_type || "Fast DC", booking.slot_count)}</span>`
+            : ""
         const action = canCancel
-            ? `<div class="booking-status ${paymentStatus.toLowerCase()}">${paymentStatus === "Paid" ? "Paid" : "Payment Pending"}</div><button data-booking-id="${booking.id}">${t("cancel")}</button>`
-            : `<span class="booking-status ${statusLabel.toLowerCase()}">${statusLabel}</span>`
+            ? `<div class="booking-status ${paymentStatus.toLowerCase()}">${paymentLabel}</div><button data-booking-id="${booking.id}">${t("cancel")}</button>`
+            : `<span class="booking-status ${statusLabel.toLowerCase()}">${statusLabel}${paymentMethodLabel ? ` · ${paymentMethodLabel}` : ""}</span>`
         return `
             <article class="booking-row ${rowClass}">
                 <div class="booking-details">
@@ -2486,10 +3269,11 @@ function renderBookingCards(bookings, canCancel){
                         <span class="button-icon">${icons.location}</span>
                         <span>Google Maps</span>
                     </a>
-                    <span class="booking-meta">${formatBookingTimeEnglish(booking.booking_time)} · ${booking.charger_type || "Fast DC"}</span>
+                    <span class="booking-meta">${formatBookingTimeEnglish(booking.booking_time, booking.slot_count, bookingSlotIntervalMinutes)} · ${booking.charger_type || "Fast DC"}</span>
                 </div>
                 <div class="booking-price">
-                    <strong>${money(booking.price)}</strong>
+                    <strong>${money(getBookingDisplayTotal(booking))}</strong>
+                    ${unitsDetail}
                     ${action}
                 </div>
             </article>
@@ -2526,7 +3310,65 @@ function hasAssistantListWord(message){
         })
 }
 
+function messageIncludesAny(text, terms){
+    const normalized = String(text || "").toLowerCase()
+    const raw = String(text || "")
+    return terms.some(function(term){
+        const candidate = String(term || "").trim()
+        if(!candidate){
+            return false
+        }
+        return raw.includes(candidate) || normalized.includes(candidate.toLowerCase())
+    })
+}
+
+function hasExplicitListBookingsCommand(message){
+    const normalized = String(message || "").toLowerCase().trim()
+    return /^(show|list|view|see|check)\b/.test(normalized)
+        && messageIncludesAny(message, ASSISTANT_MY_BOOKINGS_NOUNS)
+}
+
+function hasListBookingsIntent(message){
+    const normalized = String(message || "").toLowerCase().trim()
+    const raw = String(message || "").trim()
+    if(!normalized){
+        return false
+    }
+
+    if(messageIncludesAny(raw, ASSISTANT_MY_BOOKINGS_PHRASES)){
+        return true
+    }
+
+    if(hasExplicitListBookingsCommand(message)){
+        return true
+    }
+
+    if(/\b(show|list|view|see|check|get|display)\b.*\b(my\s+)?bookings?\b/.test(normalized)
+        || /\b(my\s+)?bookings?\b.*\b(show|list|view|see|check)\b/.test(normalized)){
+        return true
+    }
+
+    const hasBookingNoun = messageIncludesAny(raw, ASSISTANT_MY_BOOKINGS_NOUNS)
+    const hasPossessive = messageIncludesAny(raw, ASSISTANT_MY_BOOKINGS_POSSESSIVE)
+    const hasShowWord = hasAssistantListWord(message)
+        || hasAny(normalized, ["display", "check", "get", "what are"])
+
+    if(!hasBookingNoun || hasAssistantStationWord(message) || hasExplicitBookCommand(message)){
+        return false
+    }
+
+    if(hasPossessive || hasShowWord){
+        return true
+    }
+
+    return raw.split(/\s+/).length <= 3
+}
+
 function hasBookingIntent(message){
+    if(hasListBookingsIntent(message)){
+        return false
+    }
+
     const normalized = String(message || "").toLowerCase()
     if(hasAny(normalized, ASSISTANT_BOOK_WORDS) || ASSISTANT_BOOK_WORDS.some(function(term){
         return String(message || "").includes(term)
@@ -2779,14 +3621,14 @@ function formatAssistantBookingList(bookingsData){
         lines.push(`\n${t("activeBookingsLabel")}`)
         activeBookings.forEach(function(booking, index){
             const paymentStatus = booking.payment_status === "Paid" ? t("paymentPaid") : t("paymentPending")
-            lines.push(`${index + 1}. ${booking.station_name} — ${formatBookingTimeEnglish(booking.booking_time)} — ${money(booking.price)} (${paymentStatus})`)
+            lines.push(`${index + 1}. ${booking.station_name} — ${formatBookingTimeEnglish(booking.booking_time)} — ${money(getBookingDisplayTotal(booking))} (${paymentStatus})`)
         })
     }
 
     if(pastBookings.length > 0){
         lines.push(`\n${t("pastBookingsLabel")}`)
         pastBookings.slice(0, 5).forEach(function(booking, index){
-            lines.push(`${index + 1}. ${booking.station_name} — ${formatBookingTimeEnglish(booking.booking_time)} — ${money(booking.price)}`)
+            lines.push(`${index + 1}. ${booking.station_name} — ${formatBookingTimeEnglish(booking.booking_time)} — ${money(getBookingDisplayTotal(booking))}`)
         })
         if(pastBookings.length > 5){
             lines.push(t("pastBookingsMore", { count: pastBookings.length - 5 }))
@@ -2796,12 +3638,28 @@ function formatAssistantBookingList(bookingsData){
     return lines.join("\n")
 }
 
+async function replyWithAssistantBookings(){
+    clearAssistantBookingDraft()
+    assistantAwaitingStationPick = false
+    pendingBookingRequest = false
+    updateAssistantBookingActions()
+
+    const bookingsData = await fetchBookingsForAssistant()
+    if(!bookingsData){
+        return t("bookingsLoadFailed")
+    }
+
+    await showBookings()
+    return formatAssistantBookingList(bookingsData)
+}
+
 async function assistantReply(input){
     if(trySetLanguageFromCommand(input)){
         return t("languageChanged", { language: languageDisplayNames[currentLanguage] || currentLanguage })
     }
 
     const normalized = input.toLowerCase().trim()
+    const listBookingsIntent = hasListBookingsIntent(normalized) || hasListBookingsIntent(input)
     const bookingIntent = hasBookingIntent(normalized) || hasBookingIntent(input)
     const listIntent = hasListStationsIntent(normalized) || hasListStationsIntent(input)
     const requestedPincode = extractPincode(input)
@@ -2814,11 +3672,22 @@ async function assistantReply(input){
 
     if(hasHelpIntent(normalized)){
         clearAssistantBookingDraft()
+        clearAssistantCostDraft()
         return t("assistantHelpText")
     }
 
-    if(shouldAbortAssistantBookingDraft(normalized, listIntent, requestedCity, requestedPincode)){
+    if(listBookingsIntent){
+        clearAssistantCostDraft()
+        return await replyWithAssistantBookings()
+    }
+
+    if(assistantCostDraft && !hasAny(normalized, ["cost", "price", "estimate", "செலவு", "लागत", "खर्च", "ചെലവ്", "ఖర్చు", "ವೆಚ್ಚ", "मूल्य"])){
+        clearAssistantCostDraft()
+    }
+
+    if(shouldAbortAssistantBookingDraft(normalized, listIntent, requestedCity, requestedPincode, listBookingsIntent)){
         clearAssistantBookingDraft()
+        clearAssistantCostDraft()
     }
     else if(assistantBookingDraft){
         const draftReply = await continueAssistantBookingDraft(input)
@@ -2893,19 +3762,66 @@ async function assistantReply(input){
         return formatAssistantStationList(latestStations, searchLabel)
     }
 
-    if(hasAny(normalized, ["booking", "bookings", "my booking", "show booking", "முன்பதிவு", "बुकिंग", "എന്റെ ബുക്കിംഗ്", "నా బుకింగ్స్", "ನನ್ನ ಬುಕಿಂಗ್", "मम आरक्षण", "എന്റെ ബുക്കിംഗ്"])){
-        const bookingsData = await fetchBookingsForAssistant()
-        if(!bookingsData){
-            return t("bookingsLoadFailed")
-        }
-        return formatAssistantBookingList(bookingsData)
-    }
+    if(hasAny(normalized, ["cost", "price", "estimate", "செலவு", "लागत", "खर्च", "ചെലവ്", "ఖర్చు", "ವೆಚ್ಚ", "मूल्य"])){
+        const parsedUnits = extractUnitsFromMessage(input)
+        const parsedCharger = extractChargerTypeFromMessage(input, {
+            allowNumericChoice: Boolean(assistantCostDraft?.units != null || parsedUnits != null)
+        })
+        const parsedSlotCount = assistantCostDraft?.chargerType || parsedCharger
+            ? extractSlotCountFromMessage(input)
+            : null
+        const draft = assistantCostDraft || { units: null, chargerType: null, slotCount: null }
 
-    if(hasAny(normalized, ["cost", "price", "estimate", "செலவு", "लागत", "खर्च"])){
-        const units = Number(document.getElementById("booking_units").value || 10)
-        const chargerType = document.getElementById("booking_charger").value
-        const rate = getChargerUnitRate(chargerType)
-        return t("costEstimate", { price: money(calculateBookingPrice(units, chargerType)), rate: rate })
+        if(parsedUnits != null){
+            draft.units = parsedUnits
+        }
+        if(parsedCharger != null){
+            draft.chargerType = parsedCharger
+        }
+        if(parsedSlotCount != null){
+            draft.slotCount = parsedSlotCount
+        }
+        assistantCostDraft = draft
+
+        if(draft.units == null){
+            return input.trim() && !parsedCharger
+                ? t("invalidBookingUnits")
+                : t("askCostUnits")
+        }
+
+        if(!draft.chargerType){
+            return input.trim() && !parsedCharger
+                ? `${t("invalidBookingCharger")}\n\n${formatAssistantChargerOptions()}`
+                : `${t("askBookingCharger", { station: "your estimate" })}\n\n${formatAssistantChargerOptions()}`
+        }
+
+        if(draft.slotCount == null){
+            return input.trim() && !parsedSlotCount
+                ? `${t("invalidBookingSlotDuration")}\n\n${formatAssistantSlotDurationOptions()}`
+                : askAssistantBookingSlotDuration({ station_name: "your estimate" })
+        }
+
+        clearAssistantCostDraft()
+        const breakdown = calculateUnitsBreakdown(
+            draft.units,
+            draft.chargerType,
+            selectedStation ? getStationServiceCharge(selectedStation) : 0,
+            draft.slotCount
+        )
+        const unitsInput = document.getElementById("booking_units")
+        const chargerInput = document.getElementById("booking_charger")
+        if(unitsInput){
+            unitsInput.value = String(draft.units)
+        }
+        if(chargerInput){
+            chargerInput.value = draft.chargerType
+        }
+        setSelectedBookingSlotCount(draft.slotCount)
+        return t("costEstimate", {
+            price: money(breakdown.total),
+            rate: breakdown.rate_per_unit.toFixed(2),
+            units: breakdown.units
+        })
     }
 
     if(hasAny(normalized, ["cancel", "ரத்து", "रद्द"])){
@@ -3010,7 +3926,16 @@ async function submitChat(event){
     applyLanguageFromUserMessage(message)
     addChatMessage("user", message)
     input.value = ""
-    addChatMessage("assistant", await assistantReply(message))
+    try{
+        const reply = await assistantReply(message)
+        addChatMessage("assistant", reply || t("fallback"))
+    }
+    catch(error){
+        console.error("Assistant chat failed", error)
+        addChatMessage("assistant", t("bookingFailedAssistant", {
+            reason: "Something went wrong. Please refresh the page (Ctrl+Shift+R) and try again."
+        }))
+    }
     updateAssistantBookingActions()
 }
 
@@ -3052,21 +3977,14 @@ function setDefaultBookingTime(){
     document.getElementById("booking_time").value = local.toISOString().slice(0, 16)
 }
 
-window.onload = async function(){
-    const sessionUser = await ensureAuthenticated()
-    if(!sessionUser){
+let dashboardEventsBound = false
+
+function bindDashboardEvents(){
+    if(dashboardEventsBound){
         return
     }
+    dashboardEventsBound = true
 
-    username = sessionUser.username
-    localStorage.setItem("username", username)
-
-    await loadStationSlotConfig()
-    normalizeCurrentLanguage()
-    populateLanguageSelect()
-    document.getElementById("sidebar_user").innerText = username
-    document.getElementById("profile_username").innerText = username
-    renderIcons()
     const citySearchForm = document.getElementById("city_search_form")
     if(citySearchForm){
         citySearchForm.addEventListener("submit", function(event){
@@ -3076,88 +3994,174 @@ window.onload = async function(){
             searchStationsByLocation(cityInput.value, pincodeInput.value)
         })
     }
-    document.querySelectorAll(".nav-link").forEach(function(button){
-        button.addEventListener("click", function(){
+
+    document.querySelectorAll(".nav-link[data-view]").forEach(function(button){
+        button.addEventListener("click", function(event){
+            event.preventDefault()
             activateView(button.dataset.view)
         })
     })
-    document.getElementById("booking_time").addEventListener("change", function(){
-        if(selectedStation){
-            const value = document.getElementById("booking_time").value
-            if(value.includes("T")){
-                setStationSlotDate(selectedStation, value.split("T")[0])
-                setStationSlotTime(selectedStation, value.split("T")[1])
+
+    const bookingTimeInput = document.getElementById("booking_time")
+    if(bookingTimeInput){
+        bookingTimeInput.addEventListener("change", function(){
+            if(selectedStation){
+                const value = document.getElementById("booking_time").value
+                if(value.includes("T")){
+                    setStationSlotDate(selectedStation, value.split("T")[0])
+                    setStationSlotTime(selectedStation, value.split("T")[1])
+                }
+                selectedBookingSlot = {
+                    stationKey: stationLocationKey(selectedStation),
+                    bookingTime: value
+                }
+                updateSelectedStationSummary()
+                if(latestStations.length){
+                    renderStations(latestStations)
+                }
             }
-            selectedBookingSlot = {
-                stationKey: stationLocationKey(selectedStation),
-                bookingTime: value
-            }
-            updateSelectedStationSummary()
+        })
+    }
+
+    const bookingUnitsInput = document.getElementById("booking_units")
+    if(bookingUnitsInput){
+        bookingUnitsInput.addEventListener("input", function(){
+            updateBookingTotal()
             if(latestStations.length){
                 renderStations(latestStations)
             }
-        }
-    })
-    document.getElementById("booking_units").addEventListener("input", updateBookingTotal)
-    document.getElementById("booking_charger").addEventListener("change", function(){
-        updateBookingTotal()
-        if(latestStations.length){
-            renderStations(latestStations)
-        }
-    })
-    document.getElementById("booking_form").addEventListener("submit", submitBooking)
-    document.addEventListener("click", function(event){
-        if(!event.target.closest(".station-slots-wrap")){
-            closeAllSlotPickers()
-        }
-    })
-    document.getElementById("stations").addEventListener("change", function(event){
-        const target = event.target
-        if(!target.classList.contains("station-slot-date")){
-            return
-        }
-        onStationSlotDateChange(Number(target.dataset.stationIndex), target.value)
-    })
-    document.getElementById("stations").addEventListener("click", function(event){
-        if(event.target.closest(".station-slot-date")){
-            return
-        }
-        const slotButton = event.target.closest(".slot-pick-button")
-        if(slotButton){
-            selectStationSlot(Number(slotButton.dataset.stationIndex), slotButton.dataset.slotTime)
-            return
-        }
-        const slotsToggle = event.target.closest(".slot-picker-toggle")
-        if(slotsToggle){
-            toggleSlotPicker(Number(slotsToggle.dataset.stationIndex))
-            return
-        }
-        const bookButton = event.target.closest(".book-button")
-        if(bookButton){
-            selectStation(Number(bookButton.dataset.stationIndex))
-        }
-    })
-    const assistantConfirmBtn = document.getElementById("assistant_confirm_booking_btn")
-    if(assistantConfirmBtn){
-        assistantConfirmBtn.addEventListener("click", assistantConfirmBookingClick)
+        })
     }
+
+    const bookingCharger = document.getElementById("booking_charger")
+    if(bookingCharger){
+        bookingCharger.addEventListener("change", function(){
+            updateBookingTotal()
+            if(latestStations.length){
+                renderStations(latestStations)
+            }
+        })
+    }
+
+    const stationsPanel = document.getElementById("stations")
+    if(stationsPanel){
+        stationsPanel.addEventListener("click", function(event){
+            const slotsOpen = event.target.closest(".slot-picker-open")
+            if(slotsOpen){
+                openSlotPickerWindow(Number(slotsOpen.dataset.stationIndex))
+                return
+            }
+            const bookButton = event.target.closest(".book-button")
+            if(bookButton){
+                selectStation(Number(bookButton.dataset.stationIndex))
+            }
+        })
+    }
+
     const assistantBookSlotBtn = document.getElementById("assistant_book_slot_btn")
     if(assistantBookSlotBtn){
         assistantBookSlotBtn.addEventListener("click", assistantBookSlotClick)
     }
-    document.getElementById("chat_form").addEventListener("submit", submitChat)
+
+    const chatForm = document.getElementById("chat_form")
+    if(chatForm){
+        chatForm.addEventListener("submit", submitChat)
+    }
+
     document.querySelectorAll("[data-chat-prompt-key]").forEach(function(button){
         button.addEventListener("click", function(){
-            document.getElementById("chat_input").value = t(button.dataset.chatPromptKey)
-            document.getElementById("chat_form").requestSubmit()
+            const chatInput = document.getElementById("chat_input")
+            const chatFormNode = document.getElementById("chat_form")
+            if(chatInput){
+                chatInput.value = t(button.dataset.chatPromptKey)
+            }
+            if(chatFormNode){
+                chatFormNode.requestSubmit()
+            }
         })
     })
-    setDefaultBookingTime()
+}
+
+function exposeDashboardGlobals(){
+    window.activateView = activateView
+    window.findStations = findStations
+    window.showNearestStations = showNearestStations
+    window.clearStationResults = clearStationResults
+    window.seeMoreStations = seeMoreStations
+    window.logout = logout
+    window.changeLanguage = changeLanguage
+    window.searchStationsByLocation = searchStationsByLocation
+}
+
+exposeDashboardGlobals()
+
+if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", bindDashboardEvents)
+}
+else{
+    bindDashboardEvents()
+}
+
+window.onload = async function(){
+    bindDashboardEvents()
+    activateView("stations")
+
+    const sessionUser = await ensureAuthenticated()
+    if(!sessionUser){
+        return
+    }
+
+    username = sessionUser.username
+    localStorage.setItem("username", username)
+
+    document.getElementById("sidebar_user").innerText = username
+    document.getElementById("profile_username").innerText = username
+    renderIcons()
+    normalizeCurrentLanguage()
+    populateLanguageSelect()
     applyTranslations()
+
+    try{
+        setDefaultBookingTime()
+    }
+    catch(error){
+        console.error(error)
+    }
+
     updateBookingTotal()
     renderStations([])
     addChatMessage("assistant", t("welcome"))
     updateAssistantBookingActions()
     setLocationStatus(t("loading"))
-    await showNearestStations()
+
+    const checkoutView = window.location.hash.replace("#", "")
+    if(checkoutView === "bookings"){
+        activateView("bookings")
+    }
+
+    try{
+        await Promise.all([
+            loadStationSlotConfig(),
+            refreshUserActiveBookings()
+        ])
+    }
+    catch(error){
+        console.error(error)
+    }
+
+    try{
+        await showNearestStations()
+    }
+    catch(error){
+        console.error(error)
+        setLocationStatus(t("stationsLoadFailed"))
+    }
 }
+
+window.refreshUserActiveBookings = refreshUserActiveBookings
+window.refreshStationSlotAvailability = refreshStationSlotAvailability
+window.applySlotSelectionFromWindow = applySlotSelectionFromWindow
+window.setSelectedBookingSlotCount = setSelectedBookingSlotCount
+window.proceedToBookingFromSlotPick = proceedToBookingFromSlotPick
+window.openBookingWindow = openBookingWindow
+window.canUserBookStation = canUserBookStation

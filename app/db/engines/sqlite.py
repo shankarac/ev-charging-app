@@ -66,6 +66,71 @@ class SQLiteDatabase:
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)"
             )
+            user_columns.add("email")
+
+        if "role" not in user_columns:
+            conn.execute(
+                "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)"
+            )
+
+        has_settings_table = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='app_settings'"
+        ).fetchone()
+        if not has_settings_table:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS app_settings(
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_by TEXT
+                );
+                """
+            )
+
+        has_managed_stations = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='managed_stations'"
+        ).fetchone()
+        if not has_managed_stations:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS managed_stations(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    station_name TEXT NOT NULL,
+                    station_address TEXT NOT NULL,
+                    latitude REAL NOT NULL,
+                    longitude REAL NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    created_by TEXT
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_managed_stations_name
+                ON managed_stations(lower(station_name));
+                CREATE INDEX IF NOT EXISTS idx_managed_stations_active
+                ON managed_stations(is_active);
+                """
+            )
+
+        has_admin_accounts = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='admin_accounts'"
+        ).fetchone()
+        if not has_admin_accounts:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS admin_accounts(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL UNIQUE,
+                    password TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE INDEX IF NOT EXISTS idx_admin_accounts_username ON admin_accounts(username);
+                """
+            )
 
         has_reset_table = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='password_reset_tokens'"
@@ -110,6 +175,25 @@ class SQLiteDatabase:
             )
             conn.execute(
                 "UPDATE bookings SET payment_status='Pending' WHERE payment_status IS NULL OR payment_status=''"
+            )
+            booking_columns.add("payment_status")
+        if "payment_method" not in booking_columns and has_users_table:
+            conn.execute(
+                "ALTER TABLE bookings ADD COLUMN payment_method TEXT DEFAULT ''"
+            )
+            booking_columns.add("payment_method")
+        if "slot_count" not in booking_columns and has_users_table:
+            conn.execute(
+                "ALTER TABLE bookings ADD COLUMN slot_count INTEGER NOT NULL DEFAULT 1"
+            )
+
+        if has_users_table:
+            conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_bookings_active_station_slot
+                ON bookings(station_name, booking_time)
+                WHERE status='Booked'
+                """
             )
 
         has_notifications_table = conn.execute(
@@ -180,6 +264,10 @@ class SQLiteDatabase:
             if "is_read" not in notification_columns:
                 conn.execute(
                     "ALTER TABLE station_notifications ADD COLUMN is_read INTEGER NOT NULL DEFAULT 0"
+                )
+            if "created_at" not in notification_columns:
+                conn.execute(
+                    "ALTER TABLE station_notifications ADD COLUMN created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP"
                 )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_station_notifications_station_name ON station_notifications(station_name)"

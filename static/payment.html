@@ -1,56 +1,270 @@
 <!DOCTYPE html>
-
-<html>
-
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Payment</title>
-    <link rel="stylesheet" href="/static/style.css?v=26">
+    <title>Checkout · EV Charging</title>
+    <link rel="stylesheet" href="/static/style.css?v=44">
 </head>
+<body class="checkout-body">
 
-<body>
+<header class="checkout-topbar">
+    <a class="checkout-back" href="/dashboard.html">← Back to stations</a>
+    <div class="checkout-brand">EV Charging Checkout</div>
+    <div class="checkout-secure">Secure checkout</div>
+</header>
 
-<main class="station-inbox-shell">
-    <div class="card">
-        <p class="eyebrow dark">Payment</p>
-        <h1>Complete your booking payment</h1>
-        <p id="payment_summary" class="message"></p>
-        <input id="card_number" type="text" placeholder="Card Number">
-        <input id="cvv" type="text" placeholder="CVV">
-        <button onclick="payNow()">Pay Now</button>
-        <p id="payment_status" class="message"></p>
-    </div>
+<nav class="checkout-steps" aria-label="Checkout progress">
+    <span class="checkout-step done">1. Booking</span>
+    <span class="checkout-step active">2. Checkout</span>
+    <span class="checkout-step">3. Confirmation</span>
+</nav>
+
+<main class="checkout-shell" id="checkout_shell">
+    <section class="checkout-main">
+        <h1>Review your order</h1>
+        <p class="checkout-lead">Confirm your charging slot and complete payment to secure your booking.</p>
+
+        <article class="checkout-order-card" id="checkout_order">
+            <div class="checkout-order-icon" aria-hidden="true">⚡</div>
+            <div class="checkout-order-details">
+                <h2 id="checkout_station">—</h2>
+                <p id="checkout_address" class="checkout-muted">—</p>
+                <ul class="checkout-order-meta">
+                    <li><span>Charging time</span><strong id="checkout_time">—</strong></li>
+                    <li><span>Charger type</span><strong id="checkout_charger">—</strong></li>
+                    <li><span>Distance</span><strong id="checkout_distance">—</strong></li>
+                </ul>
+            </div>
+        </article>
+
+        <section class="checkout-panel">
+            <h3>Payment method</h3>
+            <div class="payment-method-grid" role="radiogroup" aria-label="Payment method">
+                <label class="payment-method-option">
+                    <input type="radio" name="payment_method" value="cash" checked>
+                    <span class="payment-method-card">
+                        <strong>Cash</strong>
+                        <small>Pay at station</small>
+                    </span>
+                </label>
+                <label class="payment-method-option">
+                    <input type="radio" name="payment_method" value="credit_card">
+                    <span class="payment-method-card">
+                        <strong>Credit card</strong>
+                        <small>Visa, Mastercard, RuPay</small>
+                    </span>
+                </label>
+                <label class="payment-method-option">
+                    <input type="radio" name="payment_method" value="debit_card">
+                    <span class="payment-method-card">
+                        <strong>Debit card</strong>
+                        <small>Bank debit card</small>
+                    </span>
+                </label>
+                <label class="payment-method-option">
+                    <input type="radio" name="payment_method" value="gpay">
+                    <span class="payment-method-card">
+                        <strong>GPay</strong>
+                        <small>Google Pay / UPI</small>
+                    </span>
+                </label>
+            </div>
+
+            <div id="payment_panel_cash" class="payment-detail-panel">
+                <p class="payment-method-note">Your slot is reserved. Pay the total amount in cash when you reach the charging station.</p>
+            </div>
+
+            <div id="payment_panel_card" class="payment-detail-panel" hidden>
+                <div class="checkout-form-grid">
+                    <label>
+                        <span>Name on card</span>
+                        <input id="card_name" type="text" placeholder="Full name" autocomplete="cc-name">
+                    </label>
+                    <label class="checkout-span-2">
+                        <span>Card number</span>
+                        <input id="card_number" type="text" inputmode="numeric" placeholder="1234 5678 9012 3456" autocomplete="cc-number">
+                    </label>
+                    <label>
+                        <span>CVV</span>
+                        <input id="cvv" type="text" inputmode="numeric" placeholder="123" autocomplete="cc-csc">
+                    </label>
+                </div>
+            </div>
+
+            <div id="payment_panel_gpay" class="payment-detail-panel" hidden>
+                <div class="checkout-form-grid">
+                    <label class="checkout-span-2">
+                        <span>GPay UPI ID or mobile number</span>
+                        <input id="gpay_upi" type="text" placeholder="name@okaxis or 9876543210" autocomplete="off">
+                    </label>
+                </div>
+                <p class="payment-method-note">You will receive a GPay payment request for the order total.</p>
+            </div>
+        </section>
+    </section>
+
+    <aside class="checkout-summary">
+        <div class="checkout-summary-card">
+            <h2>Order summary</h2>
+            <dl class="checkout-lines">
+                <div class="checkout-line">
+                    <dt id="checkout_units_line">Charging units</dt>
+                    <dd id="checkout_subtotal">Rs 0.00</dd>
+                </div>
+                <div class="checkout-line checkout-line-total">
+                    <dt>Total</dt>
+                    <dd id="checkout_total">Rs 0.00</dd>
+                </div>
+            </dl>
+            <button type="button" class="checkout-place-order" id="place_order_btn" onclick="payNow()">Place order</button>
+            <p id="payment_status" class="message checkout-status"></p>
+            <p class="checkout-footnote">By placing your order, you agree to the station booking terms. Your slot is reserved after payment.</p>
+        </div>
+    </aside>
 </main>
 
+<div class="checkout-empty" id="checkout_empty" hidden>
+    <div class="checkout-empty-card">
+        <h1>No booking to checkout</h1>
+        <p>Book a charging slot from the dashboard first, then you will be brought here to pay.</p>
+        <a class="checkout-place-order" href="/dashboard.html">Find stations</a>
+    </div>
+</div>
+
 <script src="/static/booking-format.js?v=1"></script>
+<script src="/static/booking-pricing.js?v=4"></script>
 <script>
 function getBookingPayload(){
     const storedBooking = localStorage.getItem("tempBooking")
     return storedBooking ? JSON.parse(storedBooking) : null
 }
 
-function renderSummary(){
+function money(value){
+    return `Rs ${Number(value).toFixed(2)}`
+}
+
+function getSelectedPaymentMethod(){
+    const selected = document.querySelector('input[name="payment_method"]:checked')
+    return selected ? selected.value : "cash"
+}
+
+function updatePaymentPanels(){
+    const method = getSelectedPaymentMethod()
+    document.getElementById("payment_panel_cash").hidden = method !== "cash"
+    document.getElementById("payment_panel_card").hidden = method !== "credit_card" && method !== "debit_card"
+    document.getElementById("payment_panel_gpay").hidden = method !== "gpay"
+}
+
+function formatApiError(data){
+    if(typeof data.detail === "string"){
+        return data.detail
+    }
+    if(Array.isArray(data.detail)){
+        return data.detail.map(function(item){
+            return item.msg || item.message || String(item)
+        }).join(" ")
+    }
+    return data.message || "Payment failed. Please try again."
+}
+
+function validatePaymentDetails(method){
+    if(method === "cash"){
+        return ""
+    }
+    if(method === "credit_card" || method === "debit_card"){
+        const name = document.getElementById("card_name").value.trim()
+        const number = document.getElementById("card_number").value.replace(/\s+/g, "")
+        const cvv = document.getElementById("cvv").value.trim()
+        if(!name){
+            return "Enter the name on your card."
+        }
+        if(number.length < 12){
+            return "Enter a valid card number."
+        }
+        if(cvv.length < 3){
+            return "Enter a valid CVV."
+        }
+        return ""
+    }
+    if(method === "gpay"){
+        const upi = document.getElementById("gpay_upi").value.trim()
+        if(!upi){
+            return "Enter your GPay UPI ID or mobile number."
+        }
+        return ""
+    }
+    return "Choose a payment method."
+}
+
+async function loadCheckoutConfig(){
+    try{
+        const response = await fetch("/stations/config", { credentials: "same-origin" })
+        if(!response.ok){
+            return
+        }
+        const data = await response.json()
+        applyBookingPricingConfig(data)
+    }
+    catch(error){
+        console.log(error)
+    }
+}
+
+function renderCheckout(){
     const booking = getBookingPayload()
-    const summary = document.getElementById("payment_summary")
+    const shell = document.getElementById("checkout_shell")
+    const empty = document.getElementById("checkout_empty")
     if(!booking){
-        summary.innerText = "No booking found. Please book a station first."
+        shell.hidden = true
+        empty.hidden = false
         return
     }
 
-    summary.innerText = `${booking.station_name} | ${formatBookingTimeEnglish(booking.booking_time)} | Rs ${Number(booking.price).toFixed(2)}`
+    shell.hidden = false
+    empty.hidden = true
+
+    const units = getBookingUnits(booking.units || DEFAULT_BOOKING_UNITS)
+    const slotCount = getBookingSlotCount(booking.slot_count || 1)
+    const subtotal = Number(booking.subtotal != null ? booking.subtotal : booking.price || 0)
+    const total = Number(booking.price != null ? booking.price : subtotal)
+    const chargerType = booking.charger_type || "Fast DC"
+
+    document.getElementById("checkout_station").innerText = booking.station_name || "EV Charging Station"
+    document.getElementById("checkout_address").innerText = booking.station_address || "Address unavailable"
+    document.getElementById("checkout_time").innerText = formatBookingTimeEnglish(
+        booking.booking_time,
+        slotCount,
+        bookingSlotIntervalMinutes
+    )
+    document.getElementById("checkout_charger").innerText = chargerType
+    document.getElementById("checkout_distance").innerText = booking.distance || "—"
+    document.getElementById("checkout_units_line").innerText = formatUnitsLineLabel(units, chargerType, slotCount)
+    document.getElementById("checkout_subtotal").innerText = money(subtotal)
+    document.getElementById("checkout_total").innerText = money(total)
+    updatePaymentPanels()
 }
 
 function payNow(){
     const booking = getBookingPayload()
     const status = document.getElementById("payment_status")
-    status.className = "message"
+    const button = document.getElementById("place_order_btn")
+    status.className = "message checkout-status"
+
     if(!booking){
-        status.innerText = "No booking selected for payment"
+        status.innerText = "No booking selected for checkout"
         return
     }
 
-    status.innerText = "Processing payment..."
+    const paymentMethod = getSelectedPaymentMethod()
+    const validationError = validatePaymentDetails(paymentMethod)
+    if(validationError){
+        status.innerText = validationError
+        return
+    }
+
+    button.disabled = true
+    status.innerText = "Processing your order…"
     fetch("/payments/confirm", {
         method: "POST",
         headers: {
@@ -58,40 +272,61 @@ function payNow(){
         },
         credentials: "same-origin",
         body: JSON.stringify({
+            booking_id: booking.booking_id || null,
             username: booking.username,
             station_name: booking.station_name,
             station_address: booking.station_address,
             booking_time: booking.booking_time,
             charger_type: booking.charger_type,
-            units: booking.units,
+            units: getBookingUnits(booking.units || DEFAULT_BOOKING_UNITS),
+            slot_count: getBookingSlotCount(booking.slot_count || 1),
             price: booking.price,
-            payment_reference: "dummy-payment"
+            payment_method: paymentMethod,
+            payment_reference: booking.booking_id ? `${paymentMethod}-${booking.booking_id}` : `${paymentMethod}-checkout`
         })
     }).then(function(response){
-        return response.json().then(function(data){
-            return { ok: response.ok, data: data }
+        return response.text().then(function(text){
+            let data = {}
+            if(text){
+                try {
+                    data = JSON.parse(text)
+                } catch (parseError) {
+                    if(!response.ok){
+                        throw new Error(text.slice(0, 240) || ("Server error (" + response.status + ")"))
+                    }
+                }
+            }
+            return { ok: response.ok, status: response.status, data: data }
         })
     }).then(function(result){
+        button.disabled = false
         if(!result.ok){
-            status.innerText = result.data.message || "Payment failed"
+            status.innerText = formatApiError(result.data) || ("Payment failed (HTTP " + result.status + ").")
             return
         }
 
         localStorage.removeItem("tempBooking")
-        status.className = "message success"
-        status.innerText = result.data.message || "Payment successful!"
+        document.querySelectorAll(".checkout-step")[1].classList.remove("active")
+        document.querySelectorAll(".checkout-step")[1].classList.add("done")
+        document.querySelectorAll(".checkout-step")[2].classList.add("active")
+        status.className = "message checkout-status success"
+        status.innerText = result.data.message || "Order placed successfully!"
         window.setTimeout(function(){
-            window.location.href = "/dashboard.html"
-        }, 2200)
-    }).catch(function(){
-        status.innerText = "Payment failed"
+            window.location.href = "/dashboard.html#bookings"
+        }, 1800)
+    }).catch(function(error){
+        button.disabled = false
+        console.error(error)
+        status.innerText = (error && error.message) ? error.message : "Payment failed. Please try again."
     })
 }
 
-renderSummary()
+document.querySelectorAll('input[name="payment_method"]').forEach(function(input){
+    input.addEventListener("change", updatePaymentPanels)
+})
 
+loadCheckoutConfig().finally(renderCheckout)
 </script>
 
 </body>
-
 </html>

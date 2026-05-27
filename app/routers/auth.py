@@ -5,10 +5,16 @@ from urllib.parse import urlencode
 import requests
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from app.core.auth_session import clear_session_user, get_session_user, set_session_user
+from app.core.auth_session import (
+    clear_session_user,
+    get_session_user,
+    set_admin_console_session,
+    set_session_user,
+)
 from app.core.config import settings
 from app.core.email_policy import allowed_domains_message, normalize_email
-from app.repositories import users
+from app.repositories import admin_accounts, users
+from app.repositories.users import ADMIN_ROLE
 from app.schemas.users import (
     ForgotPasswordRequest,
     ResetPasswordRequest,
@@ -64,10 +70,16 @@ def auth_session(request: Request):
     if not user:
         return JSONResponse({"authenticated": False}, status_code=401)
 
+    db_user = users.find_user_contact(user["username"])
+    if db_user:
+        user["role"] = db_user.get("role", "user")
+        request.session["user"]["role"] = user["role"]
+
     return {
         "authenticated": True,
         "username": user["username"],
         "email": user.get("email", ""),
+        "role": user.get("role", "user"),
     }
 
 
@@ -82,6 +94,12 @@ def login(user: UserLogin, request: Request):
     valid_user = users.find_user_by_email_credentials(user.username, user.password)
 
     if valid_user:
+        if valid_user.get("role") == ADMIN_ROLE:
+            return {
+                "message": "Admin accounts must use the admin sign-in page at /admin/login.html",
+                "success": False,
+                "admin_login_required": True,
+            }
         set_session_user(request, valid_user, login_email=user.username)
         session_email = user.username
         return {
@@ -115,6 +133,56 @@ def login_with_email(user: UserEmailLogin, request: Request):
     return {
         "message": "Incorrect password. Try again or use Forgot password.",
         "success": False,
+    }
+
+
+@router.post("/auth/admin/login")
+async def admin_login(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if not isinstance(body, dict):
+        body = {}
+
+    username = str(body.get("username") or body.get("email") or "").strip().lower()
+    password = str(body.get("password") or "")
+
+    if not username or not password:
+        return JSONResponse(
+            {
+                "message": "Enter admin username and password.",
+                "success": False,
+            },
+            status_code=400,
+        )
+
+    if "@" in username:
+        return JSONResponse(
+            {
+                "message": "Use admin username, not a customer email address.",
+                "success": False,
+            },
+            status_code=400,
+        )
+
+    account = admin_accounts.verify_credentials(username, password)
+    if not account:
+        return JSONResponse(
+            {
+                "message": "Invalid admin username or password. Customer accounts cannot sign in here.",
+                "success": False,
+            },
+            status_code=401,
+        )
+
+    set_admin_console_session(request, account["username"])
+    return {
+        "message": "Admin login successful",
+        "success": True,
+        "username": account["username"],
+        "redirect": "/admin.html",
     }
 
 
